@@ -36,7 +36,6 @@ export default function TeacherPanel() {
   // New-session form
   const [newCode, setNewCode] = useState('');
   const [newTitle, setNewTitle] = useState('');
-  const [newMode, setNewMode] = useState<'free' | 'match'>('free');
 
   useEffect(() => {
     if (!unlocked) return;
@@ -68,12 +67,11 @@ export default function TeacherPanel() {
       await httpsCallable(functions, 'createSession')({
         code,
         title: newTitle || code,
-        mode: newMode,
+        mode: 'match',
         passcode,
       });
       setNewCode('');
       setNewTitle('');
-      setNewMode('free');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Create failed.');
     } finally {
@@ -146,22 +144,9 @@ export default function TeacherPanel() {
               placeholder="Title (optional)"
               className="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-sm"
             />
-            <div className="grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                onClick={() => setNewMode('free')}
-                className={`py-1.5 rounded text-xs ${newMode === 'free' ? 'bg-blue-600' : 'bg-slate-800 border border-slate-700'}`}
-              >
-                🗺 Free (4-rooms)
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewMode('match')}
-                className={`py-1.5 rounded text-xs ${newMode === 'match' ? 'bg-blue-600' : 'bg-slate-800 border border-slate-700'}`}
-              >
-                🤝 AI Match (1:1)
-              </button>
-            </div>
+            <p className="text-[11px] text-slate-500 px-0.5">
+              🤝 AI auto-match (1:1) — students are paired automatically and an AI tutor leads each pair.
+            </p>
             <button
               disabled={busy}
               className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 py-1.5 rounded text-sm"

@@ -1,153 +1,105 @@
-import { useEffect, useState } from 'react';
-import Avatar from '../components/Avatar';
-import ClassroomBackdrop from '../components/ClassroomBackdrop';
-import {
-  MAP_HEIGHT,
-  MAP_WIDTH,
-  PRESENTATION_OBJECTS,
-  PRIVATE_AREAS,
-  SPAWN,
-} from '../lib/mapConfig';
+import { useEffect, useRef, useState } from 'react';
 
 /**
- * Static demo of the classroom layout — no Firebase, no LiveKit. Useful for
- * design reviews and screenshots. Reachable at /preview.
+ * Static demo of the new 1:1 AI-tutor room — no Firebase, no LiveKit.
+ * Shows the experience: two paired students on camera, an AI tutor that
+ * leads the conversation, and shared material instead of a free-roam map.
+ * Reachable at /preview, used for design reviews and screenshots.
  */
+
+interface DemoMsg {
+  id: string;
+  action: 'start' | 'next' | 'help';
+  text: string;
+}
+
+const SCRIPT: DemoMsg[] = [
+  { id: 'm1', action: 'start', text: "Hi Hiroshi and 민수! I'm your tutor. Let's talk about food. What did you eat for breakfast today?" },
+  { id: 'm2', action: 'next', text: 'Nice! Hiroshi, is rice popular in Japan too? 민수, do you like rice or bread more?' },
+  { id: 'm3', action: 'help', text: 'You can say: "I had eggs and toast." Now you both try it together!' },
+];
+
 export default function Preview() {
-  const [me] = useState({ x: SPAWN.x, y: SPAWN.y, paId: null as string | null });
-  const isMobile = useIsMobile();
-  const [panelOpen, setPanelOpen] = useState(false);
+  // Reveal the scripted tutor messages one by one so the demo feels alive.
+  const [shown, setShown] = useState(1);
+  useEffect(() => {
+    if (shown >= SCRIPT.length) return;
+    const id = setTimeout(() => setShown((n) => n + 1), 2600);
+    return () => clearTimeout(id);
+  }, [shown]);
 
-  // Sprinkle mock students across the four rooms.
-  const others = [
-    { uid: '1', name: 'Hiroshi', x: 200, y: 220, paId: 'pa-polite' },
-    { uid: '2', name: 'Mei', x: 400, y: 380, paId: 'pa-polite' },
-    { uid: '3', name: 'Lin', x: 1100, y: 240, paId: 'pa-leading' },
-    { uid: '4', name: 'James', x: 1500, y: 380, paId: 'pa-leading' },
-    { uid: '5', name: '민수', x: 250, y: 800, paId: 'pa-useful' },
-    { uid: '6', name: 'Aisha', x: 600, y: 900, paId: 'pa-useful' },
-    { uid: '7', name: 'Pim', x: 1200, y: 800, paId: 'pa-smart' },
-    { uid: '8', name: 'Wei', x: 1600, y: 900, paId: 'pa-smart' },
-    { uid: '9', name: 'Mr.Park', x: 900, y: 530, paId: null },
-  ];
-
-  // Mock board content: a Google Slides on one room, an image on another.
-  const slots: Record<string, { type: 'image' | 'slides'; imageUrl: string | null; slidesUrl: string | null; ownerName: string; status: 'approved' }> = {
-    'obj-leading': {
-      type: 'image',
-      imageUrl:
-        'data:image/svg+xml;utf8,' +
-        encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60"><rect width="240" height="60" fill="%23fde68a"/><text x="120" y="36" text-anchor="middle" font-family="Arial" font-size="14" fill="%23713f12">My Trip to Busan 🌊</text></svg>`,
-        ),
-      slidesUrl: null,
-      ownerName: 'James',
-      status: 'approved',
-    },
-    'obj-useful': {
-      type: 'image',
-      imageUrl:
-        'data:image/svg+xml;utf8,' +
-        encodeURIComponent(
-          `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 60"><rect width="240" height="60" fill="%23bae6fd"/><text x="120" y="36" text-anchor="middle" font-family="Arial" font-size="14" fill="%230c4a6e">Korean Food I Like 🍜</text></svg>`,
-        ),
-      slidesUrl: null,
-      ownerName: '민수',
-      status: 'approved',
-    },
-  };
-
-  const currentPa = PRIVATE_AREAS.find((p) => p.id === me.paId) ?? null;
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [shown]);
 
   return (
-    <div className="h-screen flex flex-col bg-slate-900 overflow-hidden">
-      <header className="bg-slate-800 px-3 py-1.5 flex items-center justify-between text-sm border-b border-slate-700 shrink-0">
-        <div className="font-semibold">
-          🌍 Global Classroom — Preview <span className="text-slate-500 font-mono ml-2">[KR-MY-2026]</span>
+    <div className="h-screen flex flex-col bg-slate-950 text-white overflow-hidden">
+      <header className="bg-slate-900/90 px-4 py-2.5 flex items-center justify-between border-b border-slate-800">
+        <div className="text-sm flex items-center gap-2">
+          <span className="font-semibold">🤝 1:1 English Room</span>
+          <span className="text-slate-500 font-mono text-xs hidden sm:inline">Demo · KR-MY-2026</span>
+          <span className="ml-1 text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">
+            PREVIEW
+          </span>
         </div>
-        <div className="text-slate-400 hidden sm:block">
-          {currentPa ? `In ${currentPa.name}` : 'Walk into a room · Arrow keys / WASD / touch'}
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-slate-400">{1 + others.length} online</span>
-          {isMobile && (
-            <button onClick={() => setPanelOpen((v) => !v)} className="bg-slate-700 px-2 py-1 rounded text-xs">
-              {panelOpen ? 'Hide cams' : 'Show cams'}
-            </button>
-          )}
+        <div className="flex gap-2">
+          <span className="bg-amber-600/70 text-xs px-3 py-1.5 rounded-lg">🔄 New partner</span>
+          <span className="bg-rose-700/70 text-xs px-3 py-1.5 rounded-lg">Leave</span>
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden relative">
-        <main className="flex-1 overflow-auto bg-sky-200 relative">
-          <div
-            className="relative"
-            style={{
-              width: MAP_WIDTH,
-              height: MAP_HEIGHT,
-              background: 'linear-gradient(180deg, #cfe7f8 0 70px, #f5e6c8 70px)',
-            }}
-          >
-            <ClassroomBackdrop />
-
-            {PRESENTATION_OBJECTS.map((obj) => {
-              const s = slots[obj.id];
-              return (
-                <div
-                  key={obj.id}
-                  className="absolute bg-slate-100 border-2 border-slate-700 rounded shadow-lg overflow-hidden"
-                  style={{ left: obj.x, top: obj.y, width: obj.w, height: obj.h }}
-                >
-                  {s?.imageUrl ? (
-                    <img src={s.imageUrl} alt={obj.label} className="w-full h-full object-cover bg-black" />
-                  ) : obj.id === 'obj-welcome' ? (
-                    <div className="w-full h-full bg-sky-300 flex flex-col items-center justify-center text-center text-slate-800 px-2 leading-tight">
-                      <div className="text-xs font-extrabold">🌐 GLOBAL ENGLISH CLASSROOM</div>
-                      <div className="text-[10px] font-semibold opacity-80">
-                        Korea · Malaysia · Taiwan · Thailand
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs">
-                      📺 {obj.label}
-                    </div>
-                  )}
-                  {s?.ownerName && (
-                    <div className="absolute top-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1 py-0.5 truncate">
-                      by {s.ownerName}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {others.map((p) => (
-              <Avatar key={p.uid} name={p.name} x={p.x} y={p.y} inPa={false} />
-            ))}
-            <Avatar name="You" x={me.x} y={me.y} isMe inPa={!!me.paId} />
-          </div>
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
+        <main className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 min-h-0">
+          <VideoCard name="민수 (you)" sub="🇰🇷 Korea" from="from-sky-500 to-indigo-600" you />
+          <VideoCard name="Hiroshi" sub="🌐 Overseas" from="from-emerald-500 to-teal-600" />
         </main>
 
-        <aside
-          className={`bg-slate-900 border-l border-slate-700 flex flex-col transition-all
-            ${isMobile
-              ? `absolute right-0 top-0 bottom-0 z-20 shadow-2xl ${panelOpen ? 'w-72' : 'w-0 overflow-hidden border-l-0'}`
-              : 'w-80'}`}
-        >
-          <div className="p-3 border-b border-slate-700">
-            <div className="text-xs text-slate-400 mb-2">No private area</div>
-            <div className="flex gap-2">
-              <button disabled className="flex-1 bg-slate-700 opacity-40 py-1.5 rounded text-xs">🎤 Mute</button>
-              <button disabled className="flex-1 bg-slate-700 opacity-40 py-1.5 rounded text-xs">📷 Off</button>
-            </div>
-            <button disabled className="mt-2 w-full py-1.5 rounded text-xs bg-emerald-700 opacity-40">
-              🖥 Share screen
-            </button>
+        <aside className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col p-3 gap-3 min-h-0">
+          <div className="flex gap-2">
+            <span className="flex-1 bg-slate-800 py-2 rounded-lg text-xs text-center">🎤 Mute</span>
+            <span className="flex-1 bg-slate-800 py-2 rounded-lg text-xs text-center">📷 Camera off</span>
           </div>
-          <div className="flex-1 overflow-auto p-3">
-            <div className="text-slate-500 text-xs text-center py-8">
-              Walk into a coloured room to start your camera and microphone.
-              Only people inside the same room can see and hear you.
+          <span className="bg-slate-800 py-2 rounded-lg text-xs text-center">🖥 Share my screen</span>
+
+          <div className="flex-1 min-h-0">
+            <div className="flex flex-col h-full bg-indigo-50 text-slate-900 rounded-xl shadow-inner overflow-hidden">
+              <div className="px-3 py-2.5 bg-indigo-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <span className="text-lg">🦉</span> AI Tutor
+                </div>
+                <span className="text-[11px] px-2 py-1 rounded-full font-medium bg-emerald-400 text-emerald-950">
+                  ● Auto-leading
+                </span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                {SCRIPT.slice(0, shown).map((m) => (
+                  <div
+                    key={m.id}
+                    className="bg-white border border-indigo-100 rounded-xl p-2.5 shadow-sm text-sm leading-snug"
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[10px] text-indigo-600 uppercase tracking-wide font-semibold">
+                        {m.action === 'help' ? '🆘 Help' : m.action === 'start' ? '👋 Welcome' : '💬 Question'}
+                      </span>
+                      <span className="text-xs text-indigo-600">🔊</span>
+                    </div>
+                    {m.text}
+                  </div>
+                ))}
+                {shown < SCRIPT.length && (
+                  <p className="text-indigo-500 text-xs animate-pulse">Tutor is thinking…</p>
+                )}
+                <div ref={endRef} />
+              </div>
+              <div className="p-2 bg-indigo-100 border-t border-indigo-200 flex gap-2">
+                <span className="flex-1 bg-emerald-600 text-white text-sm py-2 rounded-lg text-center">
+                  💬 New question
+                </span>
+                <span className="flex-1 bg-indigo-600 text-white text-sm py-2 rounded-lg text-center">
+                  🆘 Help me
+                </span>
+              </div>
             </div>
           </div>
         </aside>
@@ -156,15 +108,29 @@ export default function Preview() {
   );
 }
 
-function useIsMobile() {
-  const [mobile, setMobile] = useState(() =>
-    typeof window === 'undefined' ? false : window.matchMedia('(max-width: 768px)').matches,
+function VideoCard({
+  name,
+  sub,
+  from,
+  you,
+}: {
+  name: string;
+  sub: string;
+  from: string;
+  you?: boolean;
+}) {
+  const initial = name.trim().charAt(0).toUpperCase();
+  return (
+    <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-900 flex items-center justify-center">
+      <div className={`absolute inset-0 bg-gradient-to-br ${from} opacity-90`} />
+      <div className="relative w-24 h-24 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-4xl font-bold">
+        {initial}
+      </div>
+      <div className="absolute bottom-2 left-2 flex items-center gap-2 bg-black/40 backdrop-blur px-2.5 py-1 rounded-lg text-xs">
+        <span className="font-semibold">{name}</span>
+        <span className="text-white/70">{sub}</span>
+        {you && <span className="text-emerald-300">🎤</span>}
+      </div>
+    </div>
   );
-  useEffect(() => {
-    const mql = window.matchMedia('(max-width: 768px)');
-    const handler = (e: MediaQueryListEvent) => setMobile(e.matches);
-    mql.addEventListener('change', handler);
-    return () => mql.removeEventListener('change', handler);
-  }, []);
-  return mobile;
 }
