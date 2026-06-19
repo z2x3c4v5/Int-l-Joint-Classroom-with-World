@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "rooms": {
+      "$sessionCode": {
+        ".validate": "$sessionCode.matches(/^[A-Z0-9-]{3,16}$/)",
+        "players": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && auth.uid == $uid",
+            ".validate": "newData.hasChildren(['name','x','y']) && newData.child('name').isString() && newData.child('x').isNumber() && newData.child('y').isNumber()"
+          }
+        }
+      }
+    }
+  }
+}

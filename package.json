@@ -1,0 +1,30 @@
+{
+  "name": "global-classroom",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Global virtual classroom with avatar movement, private areas (proximity audio/video), and shared presentation objects. Separate app from English Master Class.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p . && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "@livekit/components-react": "^2.6.0",
+    "firebase": "^11.0.0",
+    "livekit-client": "^2.7.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tailwindcss": "^4.0.0",
+    "@tailwindcss/vite": "^4.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^6.0.0"
+  }
+}
