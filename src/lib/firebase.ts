@@ -22,8 +22,13 @@ export const rtdb = getDatabase(app);
 export const storage = getStorage(app);
 export const functions = getFunctions(app, import.meta.env.VITE_FB_REGION ?? 'us-central1');
 
+/** Firestore rules require auth even to look up a class code. */
+export async function ensureSignedIn(): Promise<User> {
+  return auth.currentUser ?? (await signInAnonymously(auth)).user;
+}
+
 export async function signInWithNickname(nickname: string): Promise<User> {
-  const cred = await signInAnonymously(auth);
-  await updateProfile(cred.user, { displayName: nickname });
-  return cred.user;
+  const user = await ensureSignedIn();
+  await updateProfile(user, { displayName: nickname });
+  return user;
 }

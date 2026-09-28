@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { signInAnonymously } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { auth, db, functions } from '../lib/firebase';
+import { db, ensureSignedIn, functions } from '../lib/firebase';
 import { isValidSessionCode, normaliseSessionCode } from '../lib/session';
 
 interface SessionRow {
@@ -40,11 +39,22 @@ export default function TeacherPanel() {
 
   useEffect(() => {
     if (!unlocked) return;
-    if (!auth.currentUser) signInAnonymously(auth).catch(console.error);
-    const q = query(collection(db, 'sessions'), orderBy('createdAt', 'desc'));
-    return onSnapshot(q, (snap) =>
-      setSessions(snap.docs.map((d) => ({ ...(d.data() as SessionRow), id: d.id }))),
-    );
+    // Subscribe only after sign-in lands — the rules reject anonymous reads.
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+    ensureSignedIn()
+      .then(() => {
+        if (cancelled) return;
+        const q = query(collection(db, 'sessions'), orderBy('createdAt', 'desc'));
+        unsub = onSnapshot(q, (snap) =>
+          setSessions(snap.docs.map((d) => ({ ...(d.data() as SessionRow), id: d.id }))),
+        );
+      })
+      .catch(console.error);
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
   }, [unlocked]);
 
   useEffect(() => {

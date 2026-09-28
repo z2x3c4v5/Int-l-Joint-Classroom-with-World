@@ -2,7 +2,7 @@
   "rules": {
     "rooms": {
       "$sessionCode": {
-        ".validate": "$sessionCode.matches(/^[A-Z0-9-]{3,16}$/)",
+        ".validate": "$sessionCode.matches(/^[A-Z0-9-]+$/) && $sessionCode.length >= 3 && $sessionCode.length <= 16",
         "players": {
           ".read": "auth != null",
           "$uid": {

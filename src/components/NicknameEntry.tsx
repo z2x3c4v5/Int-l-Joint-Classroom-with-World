@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { signInWithNickname } from '../lib/firebase';
+import { ensureSignedIn, signInWithNickname } from '../lib/firebase';
 import { fetchSession, isValidSessionCode, normaliseSessionCode } from '../lib/session';
 import type { SessionMode } from '../lib/session';
 import type { Country } from '../lib/matchmaking';
@@ -41,6 +41,7 @@ export default function NicknameEntry({ onJoined }: Props) {
     let cancelled = false;
     const id = setTimeout(async () => {
       try {
+        await ensureSignedIn();
         const s = await fetchSession(cleanCode);
         if (cancelled) return;
         setResolvedMode(s?.mode ?? null);
@@ -69,6 +70,7 @@ export default function NicknameEntry({ onJoined }: Props) {
     }
     setBusy(true);
     try {
+      await ensureSignedIn();
       const session = await fetchSession(cleanCode);
       if (!session) {
         setError('That class code does not exist. Ask your teacher.');

@@ -63,7 +63,8 @@ export const mintLiveKitToken = onCall(
 /* ─────────────────────────  Image moderation  ───────────────────────── */
 
 export const moderateUploadedImage = onObjectFinalized(
-  { region: 'us-central1' },
+  // Storage triggers must run in the bucket's own region.
+  { region: 'us-east1' },
   async (event) => {
     const { bucket, name, contentType } = event.data;
     if (!name?.startsWith('presentations/')) return;
