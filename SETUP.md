@@ -1,6 +1,8 @@
 # Setup — make the app actually work
 
-The AI 1:1 match app needs three external services. You create the accounts
+The app has two modes (teacher picks per session): **🗺 ZEP map** (walk
+around 4 rooms; when exactly 2 students are in a room an AI tutor leads their
+talk) and **🤝 AI Match** (auto 1:1 pairing). It needs three external services. You create the accounts
 (only you can — they're tied to your billing); then the backend gets deployed.
 
 | Service | Used for | Cost |
@@ -9,9 +11,8 @@ The AI 1:1 match app needs three external services. You create the accounts
 | **LiveKit Cloud** | camera / microphone | Free tier for testing; ~$50/mo at full scale |
 | **OpenAI** | the AI tutor | Pay per use, ~₩1 per tutor message |
 
-Only these Firebase services are needed: **Authentication, Firestore, Functions**
-(plus **Storage** so the functions deploy cleanly). Realtime Database is **not**
-used.
+Firebase services needed: **Authentication, Firestore, Functions, Storage**
+(board images) and **Realtime Database** (avatar positions in ZEP map mode).
 
 ---
 
@@ -22,15 +23,16 @@ used.
    **Anonymous**.
 3. **Build → Firestore Database → Create database →** Production mode → pick a
    location (e.g. `asia-northeast3` Seoul) → Enable.
-4. **Build → Storage → Get started** (accept defaults). *(Needed only so the
-   functions deploy; no images are uploaded yet.)*
+4. **Build → Storage → Get started** (accept defaults).
+4b. **Build → Realtime Database → Create database** (locked mode). Copy its
+   URL into `VITE_FB_DATABASE_URL`.
 5. **Upgrade to Blaze:** bottom-left gear / "Upgrade" → **Blaze (pay as you go)**
    and add a card. (Cloud Functions require Blaze.)
 6. Get the **web config:** gear icon → **Project settings → General →** scroll to
    **Your apps →** click the **`</>` (Web)** icon → register an app (no hosting
    needed) → copy the `firebaseConfig` values into your `.env` / Vercel
    (`VITE_FB_API_KEY`, `VITE_FB_AUTH_DOMAIN`, `VITE_FB_PROJECT_ID`,
-   `VITE_FB_APP_ID`).
+   `VITE_FB_APP_ID`, `VITE_FB_STORAGE_BUCKET`, `VITE_FB_MSG_SENDER_ID`).
 
 ## 2. LiveKit Cloud
 
@@ -66,7 +68,7 @@ firebase functions:secrets:set TEACHER_PASSCODE      # any password you choose
 
 # Deploy rules + functions:
 cd functions && npm install && cd ..
-firebase deploy --only firestore:rules,storage:rules,functions
+firebase deploy --only firestore:rules,storage:rules,database,functions
 ```
 
 `TEACHER_PASSCODE` is the password you'll type to open `/teacher`.

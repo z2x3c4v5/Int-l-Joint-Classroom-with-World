@@ -10,6 +10,9 @@ The teacher picks the mode when creating a session in `/teacher`.
 
 ### 🗺 Free mode (4-room ZEP layout)
 - Students walk a 2D map with arrow keys / WASD / touch joystick
+- **Hallway proximity A/V**: outside the rooms, you see and hear people near
+  you; as they walk away their video fades/blurs and their voice gets quieter,
+  then they drop out entirely (tracks unsubscribed — no bandwidth, no leak)
 - Four named rooms (Polite / Leading / Useful / Smart) act as Private Areas:
   step inside → camera + mic auto-connect to the rest of the room only
 - Welcome board at the centre + a presentation board per room

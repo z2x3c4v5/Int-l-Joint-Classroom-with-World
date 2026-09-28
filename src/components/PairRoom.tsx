@@ -34,8 +34,19 @@ export default function PairRoom({
   myName,
   onLeave,
 }: Props) {
-  const { room, remotes, micOn, camOn, screenOn, connecting, toggleMic, toggleCam, toggleScreen } =
-    useLiveKitForPA(sessionCode, pairRoomId, myName);
+  const {
+    room,
+    remotes,
+    micOn,
+    camOn,
+    screenOn,
+    connecting,
+    toggleMic,
+    toggleCam,
+    toggleScreen,
+    canPlayAudio,
+    startAudio,
+  } = useLiveKitForPA(sessionCode, pairRoomId, myName);
   const { messages, busy, trigger } = useFacilitator(sessionCode, pairId);
   const [auto, setAuto] = useState(true);
 
@@ -137,6 +148,14 @@ export default function PairRoom({
               {camOn ? '📷 Camera off' : '📷 Camera on'}
             </button>
           </div>
+          {room && !canPlayAudio && (
+            <button
+              onClick={() => startAudio().catch(console.error)}
+              className="bg-amber-500 hover:bg-amber-400 text-amber-950 py-2 rounded-lg text-xs font-semibold"
+            >
+              🔊 Tap to hear your partner
+            </button>
+          )}
           <button
             disabled={!room}
             onClick={toggleScreen}

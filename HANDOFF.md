@@ -23,7 +23,9 @@ OpenAI(gpt-4o-mini) 조합으로 동시 70명까지 안정. 월 비용 약 5만 
   - `mintLiveKitToken` — 세션×PA 검증 후 토큰 발급
   - `moderateUploadedImage` — Vision SafeSearch
   - `matchPlayers` — KR↔INTL 자동 페어링 (트랜잭션)
-  - `facilitatorTurn` — gpt-4o-mini로 AI 진행자 응답 생성
+  - `facilitatorTurn` — gpt-4o-mini로 AI 진행자 응답 생성 (Match 모드 페어)
+  - `roomFacilitatorTurn` — ZEP 모드 프라이빗 룸에 정확히 2명일 때 AI 진행자
+    (RTDB 위치로 서버가 인원 확인, 룸별 테마, 8초 스로틀)
   - `endPair` — 페어 종료 + 옵션으로 재큐
   - `createSession` / `setSessionActive` / `moderateObject` — 선생님 액션
 
@@ -101,6 +103,12 @@ sessions/{code}/pairs/{pairId}            ← matchPlayers가 생성
 
 sessions/{code}/pairs/{pairId}/facilitatorMessages/{msgId}
   role: 'facilitator', text, action: 'start'|'next'|'help', ts
+
+sessions/{code}/rooms/{paId}                ← ZEP 모드 AI 진행자 상태 (클라 접근 불가)
+  pairKey, lastTurnAt
+
+sessions/{code}/rooms/{paId}/facilitatorMessages/{msgId}
+  role, text, action, pairKey(두 uid 정렬 후 '_' 연결), ts
 ```
 
 ### Realtime DB
@@ -161,7 +169,14 @@ firebase deploy --only firestore:rules,storage:rules,database,functions
 - **모바일 Safari**: 카메라/마이크는 첫 사용자 제스처 후에만 가능. Join /
   Find-partner 버튼이 그 제스처 역할. 자동 입장 금지.
 - **번들 1.4MB**: 첫 진입 늦음. 코드 스플릿 안 했음.
-- **AI 코치는 듣지 않음**: 현재는 학생 버튼 누를 때만 새 메시지. 자동 개입 없음.
+- **AI 코치는 듣지 않음**: 음성 인식 없음. 대신 호스트 클라(uid 작은 쪽)가 45초마다
+  자동으로 다음 질문을 요청함 (Match 페어룸 / ZEP 2인 룸 공통).
+- **ZEP 룸 AI는 정확히 2명일 때만**: 3명 이상이면 대기 안내만 표시.
+- **복도 근접 A/V**: 복도는 LiveKit 룸 `pa-hall` 하나를 공유하고 `autoSubscribe:false`.
+  `SUBSCRIBE_RADIUS`(360px) 안의 사람만 구독, `NEAR_RADIUS`(110)~`HEAR_RADIUS`(300)
+  사이에서 영상 흐림·볼륨(거리² 감쇠) 적용. 볼륨은 `webAudioMix` + `participant.setVolume`
+  (iOS Safari는 element.volume 무시). 값은 `mapConfig.ts`에서 조정.
+- **A/V 시작**: 첫 키 입력/탭 또는 "Turn on camera & mic" 버튼 뒤에만 연결 (브라우저 제스처 정책).
 - **PPT 직접 임베드 불가**: Google Slides 링크 또는 PDF 변환 필요.
 
 ## 9. 작업 시 체크리스트

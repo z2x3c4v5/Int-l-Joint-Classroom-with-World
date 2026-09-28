@@ -4,6 +4,7 @@ import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { defineSecret } from 'firebase-functions/params';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getDatabase } from 'firebase-admin/database';
 import { AccessToken } from 'livekit-server-sdk';
 import { ImageAnnotatorClient } from '@google-cloud/vision';
 
@@ -347,6 +348,155 @@ export const facilitatorTurn = onCall(
         action,
         ts: FieldValue.serverTimestamp(),
       });
+    return { ok: true, text };
+  },
+);
+
+/* ─────────────────────  Private-area AI facilitator  ─────────────────────
+ *
+ * Free (ZEP) mode: when EXACTLY two students stand inside the same Private
+ * Area, an AI tutor leads their conversation. Who is in the room is read
+ * from RTDB presence on the server (never trusted from the client), and the
+ * caller must be one of the two. Messages go to
+ * sessions/{code}/rooms/{paId}/facilitatorMessages tagged with a pairKey
+ * (sorted uids) so a new duo in the same room starts a fresh conversation.
+ *
+ * A per-room state doc throttles calls so both clients (or a double click)
+ * can't make the tutor talk twice in a row.
+ */
+const PA_RE = /^pa-[a-z0-9-]+$/;
+const MIN_TURN_GAP_MS = 8_000;
+
+// Each ZEP room has a theme the tutor steers toward.
+const ROOM_THEMES: Record<string, { name: string; theme: string }> = {
+  'pa-polite': { name: 'Polite Room', theme: 'polite expressions (please, thank you, excuse me, may I…)' },
+  'pa-leading': { name: 'Leading Room', theme: 'taking turns leading: asking and answering questions' },
+  'pa-useful': { name: 'Useful Room', theme: 'useful everyday expressions (school, food, hobbies, weather)' },
+  'pa-smart': { name: 'Smart Room', theme: 'fun thinking questions (would you rather, favourite things, why)' },
+};
+
+export const roomFacilitatorTurn = onCall(
+  { secrets: [OPENAI_API_KEY], region: 'us-central1', timeoutSeconds: 30 },
+  async (req) => {
+    if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
+    const { code, paId, action, lastUtterance } = req.data as {
+      code?: string;
+      paId?: string;
+      action?: 'start' | 'next' | 'help';
+      lastUtterance?: string;
+    };
+    if (!code || !SESSION_RE.test(code)) throw new HttpsError('invalid-argument', 'Bad code.');
+    if (!paId || !PA_RE.test(paId)) throw new HttpsError('invalid-argument', 'Bad paId.');
+    if (action !== 'start' && action !== 'next' && action !== 'help') {
+      throw new HttpsError('invalid-argument', 'Bad action.');
+    }
+
+    const db = getFirestore();
+    const sessionSnap = await db.doc(`sessions/${code}`).get();
+    if (!sessionSnap.exists || sessionSnap.data()?.active !== true) {
+      throw new HttpsError('failed-precondition', 'Session is not open.');
+    }
+
+    // Who is actually standing in this room right now?
+    const playersSnap = await getDatabase().ref(`rooms/${code}/players`).get();
+    const players = (playersSnap.val() ?? {}) as Record<string, { name?: string; paId?: string | null }>;
+    const inRoom = Object.entries(players)
+      .filter(([, p]) => p?.paId === paId)
+      .map(([uid, p]) => ({ uid, name: String(p.name ?? 'Student').slice(0, 16) }))
+      .sort((a, b) => (a.uid < b.uid ? -1 : 1));
+    if (!inRoom.some((p) => p.uid === req.auth!.uid)) {
+      throw new HttpsError('permission-denied', 'You are not in this room.');
+    }
+    if (inRoom.length !== 2) return { ok: false, skipped: 'not-a-pair' };
+    const pairKey = inRoom.map((p) => p.uid).join('_');
+
+    // Throttle + de-dupe inside a transaction so two clients can't both fire.
+    const stateRef = db.doc(`sessions/${code}/rooms/${paId}`);
+    const allowed = await db.runTransaction(async (tx) => {
+      const s = (await tx.get(stateRef)).data() ?? {};
+      const last = s.lastTurnAt?.toMillis?.() ?? 0;
+      const samePair = s.pairKey === pairKey;
+      const since = Date.now() - last;
+      // A duo gets one greeting per minute (a failed greeting can be retried).
+      if (action === 'start' && samePair && since < 60_000) return false;
+      if (samePair && since < MIN_TURN_GAP_MS) return false;
+      tx.set(stateRef, { pairKey, lastTurnAt: FieldValue.serverTimestamp() }, { merge: true });
+      return true;
+    });
+    if (!allowed) return { ok: false, skipped: 'throttled' };
+
+    const msgCol = db.collection(`sessions/${code}/rooms/${paId}/facilitatorMessages`);
+    // Recent lines for THIS duo so the tutor doesn't repeat itself.
+    const recent = await msgCol.orderBy('ts', 'desc').limit(10).get();
+    const history = recent.docs
+      .map((d) => d.data())
+      .filter((m) => m.pairKey === pairKey)
+      .slice(0, 4)
+      .reverse()
+      .map((m) => `- ${String(m.text ?? '')}`)
+      .join('\n');
+
+    const room = ROOM_THEMES[paId] ?? { name: 'classroom', theme: 'daily life' };
+    const names = inRoom.map((p) => p.name).join(' and ');
+
+    const system = [
+      'You are a friendly English-conversation facilitator for elementary-school students (ages 10–13).',
+      `Two students, ${names}, just met in the ${room.name} of a virtual classroom. One may be Korean and one from another country.`,
+      `This room practises: ${room.theme}.`,
+      'Keep every response under 35 English words, simple A2-level vocabulary, encouraging tone.',
+      'Never reveal you are an AI. Speak as a kind classroom teacher.',
+      'Address the students by name and make them take turns: say who answers first.',
+      'Always end with one clear, easy question.',
+    ].join(' ');
+
+    let userPrompt: string;
+    if (action === 'start') {
+      userPrompt = `Greet ${names} in one short sentence, then ask a first easy question that fits the room.`;
+    } else if (action === 'next') {
+      userPrompt = `Keep the conversation going with a fresh follow-up question. Let the other student answer first this time.`;
+    } else {
+      const stuck = (lastUtterance ?? '').slice(0, 200);
+      userPrompt = stuck
+        ? `A student is stuck. They were trying to say: "${stuck}". Give one short sentence they can copy, then ask them to say it.`
+        : `A student is stuck on the last question. Give one short example answer they can copy, then ask them to try.`;
+    }
+    if (history) userPrompt += `\n\nYour previous lines to them (do not repeat):\n${history}`;
+
+    const apiKey = OPENAI_API_KEY.value();
+    if (!apiKey) throw new HttpsError('failed-precondition', 'OPENAI_API_KEY not set.');
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        temperature: 0.8,
+        max_tokens: 120,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userPrompt },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new HttpsError('internal', `OpenAI failed: ${txt.slice(0, 200)}`);
+    }
+    const json = (await res.json()) as {
+      choices: Array<{ message: { content: string } }>;
+    };
+    const text = json.choices?.[0]?.message?.content?.trim() ?? '';
+
+    await msgCol.add({
+      role: 'facilitator',
+      text,
+      action,
+      pairKey,
+      ts: FieldValue.serverTimestamp(),
+    });
     return { ok: true, text };
   },
 );

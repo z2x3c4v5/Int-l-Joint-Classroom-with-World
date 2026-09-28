@@ -39,6 +39,17 @@ service cloud.firestore {
         allow delete: if request.auth != null && request.auth.uid == uid;
       }
 
+      // Free-mode Private Areas: AI tutor feed for a 2-person room.
+      // Only roomFacilitatorTurn (Admin SDK) writes; the state doc is private.
+      match /rooms/{paId} {
+        allow read, write: if false;
+
+        match /facilitatorMessages/{msgId} {
+          allow read: if request.auth != null;
+          allow write: if false;
+        }
+      }
+
       // 1:1 pair rooms produced by the matchmaker. Members read-only.
       match /pairs/{pairId} {
         allow read: if request.auth != null;
