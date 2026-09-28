@@ -164,7 +164,16 @@ export function useLiveKitForPA(
         roomRef.current = r;
         // People already in the room don't fire TrackPublished — sync them now.
         r.remoteParticipants.forEach(applySubscriptions);
-        await r.localParticipant.enableCameraAndMicrophone();
+        // A denied/missing camera or mic must not block the room: the student
+        // can still see and hear others. Try each device on its own.
+        const [cam, mic] = await Promise.allSettled([
+          r.localParticipant.setCameraEnabled(true),
+          r.localParticipant.setMicrophoneEnabled(true),
+        ]);
+        setCamOn(cam.status === 'fulfilled');
+        setMicOn(mic.status === 'fulfilled');
+        if (cam.status === 'rejected') console.warn('Camera unavailable', cam.reason);
+        if (mic.status === 'rejected') console.warn('Microphone unavailable', mic.reason);
         setRoom(r);
       } catch (err) {
         console.error('LiveKit join failed', err);
