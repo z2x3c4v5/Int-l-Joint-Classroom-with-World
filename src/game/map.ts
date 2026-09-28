@@ -25,9 +25,9 @@ enum T {
   FloorSmart,
 }
 
-export interface PrivateArea {
-  id: string;
-  name: string;
+/** A big classroom: open space inside it is proximity chat (like the hallway). */
+export interface Zone {
+  id: string; // pa-polite … (also the AI tutor's theme key)
   x: number;
   y: number;
   w: number;
@@ -35,9 +35,23 @@ export interface PrivateArea {
   color: string;
 }
 
+/** A desk pod: a PRIVATE area for a 1:1 talk, with its own AI tutor. */
+export interface PrivateArea {
+  id: string; // pa-polite-1 …
+  zoneId: string;
+  n: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  color: string;
+  /** Where the tutor owl sits (centre of the table). */
+  npc: { x: number; y: number };
+}
+
 export interface PresentationObject {
   id: string;
-  paId: string | null; // null = corridor board, reachable by everyone
+  paId: string | null; // zone that can reach it; null = corridor board
   x: number;
   y: number;
   w: number;
@@ -47,53 +61,70 @@ export interface PresentationObject {
 
 interface RoomDef {
   id: string;
-  name: string;
   tx: number;
   ty: number;
   tw: number;
   th: number;
   floor: T;
   color: string;
+  rug: [string, string];
   /** Wall row (2 tiles tall) whose face carries this room's blackboard. */
   boardTy: number;
   /** Doors: tiles to carve out of the room walls. */
   doors: Array<[number, number]>;
+  /** Which side the corridor door is on (keeps furniture out of the way). */
+  doorSide: 'left' | 'right';
 }
 
 // Layout (tiles):  grass border · 2×2 classrooms · cross corridor · entrance south.
 const ROOMS: RoomDef[] = [
   {
-    id: 'pa-polite', name: 'Polite Room', tx: 3, ty: 4, tw: 16, th: 10, floor: T.FloorPolite, color: '#5b8def',
-    boardTy: 2, doors: [[19, 8], [19, 9], [15, 14], [16, 14]],
+    id: 'pa-polite', tx: 3, ty: 4, tw: 16, th: 10, floor: T.FloorPolite, color: '#4f7fe8', rug: ['#9dbcf7', '#7fa5f2'],
+    boardTy: 2, doors: [[19, 8], [19, 9], [15, 14], [16, 14]], doorSide: 'right',
   },
   {
-    id: 'pa-leading', name: 'Leading Room', tx: 25, ty: 4, tw: 16, th: 10, floor: T.FloorLeading, color: '#3cb878',
-    boardTy: 2, doors: [[24, 8], [24, 9], [27, 14], [28, 14]],
+    id: 'pa-leading', tx: 25, ty: 4, tw: 16, th: 10, floor: T.FloorLeading, color: '#2fae6e', rug: ['#8fdcb0', '#6ecf98'],
+    boardTy: 2, doors: [[24, 8], [24, 9], [27, 14], [28, 14]], doorSide: 'left',
   },
   {
-    id: 'pa-useful', name: 'Useful Room', tx: 3, ty: 19, tw: 16, th: 9, floor: T.FloorUseful, color: '#f59e3b',
-    boardTy: 17, doors: [[19, 22], [19, 23], [15, 17], [15, 18], [16, 17], [16, 18]],
+    id: 'pa-useful', tx: 3, ty: 19, tw: 16, th: 9, floor: T.FloorUseful, color: '#ec8a25', rug: ['#f9c58a', '#f5ae66'],
+    boardTy: 17, doors: [[19, 22], [19, 23], [15, 17], [15, 18], [16, 17], [16, 18]], doorSide: 'right',
   },
   {
-    id: 'pa-smart', name: 'Smart Room', tx: 25, ty: 19, tw: 16, th: 9, floor: T.FloorSmart, color: '#a36cf0',
-    boardTy: 17, doors: [[24, 22], [24, 23], [27, 17], [27, 18], [28, 17], [28, 18]],
+    id: 'pa-smart', tx: 25, ty: 19, tw: 16, th: 9, floor: T.FloorSmart, color: '#9358e8', rug: ['#c9a8f7', '#b48cf2'],
+    boardTy: 17, doors: [[24, 22], [24, 23], [27, 17], [27, 18], [28, 17], [28, 18]], doorSide: 'left',
   },
 ];
 
-export const PRIVATE_AREAS: PrivateArea[] = ROOMS.map((r) => ({
-  id: r.id,
-  name: r.name,
-  x: r.tx * TILE,
-  y: r.ty * TILE,
-  w: r.tw * TILE,
-  h: r.th * TILE,
-  color: r.color,
+export const ZONES: Zone[] = ROOMS.map((r) => ({
+  id: r.id, x: r.tx * TILE, y: r.ty * TILE, w: r.tw * TILE, h: r.th * TILE, color: r.color,
+}));
+
+// Each classroom holds 4 desk pods (2×2), 6×3 tiles each: a table with one
+// chair on each side, so two students sit face to face.
+interface PodDef { room: RoomDef; n: number; tx: number; ty: number }
+const PODS: PodDef[] = ROOMS.flatMap((r) => {
+  const rows = r.th >= 10 ? [r.ty + 3, r.ty + 6] : [r.ty + 2, r.ty + 5];
+  const cols = [r.tx + 1, r.tx + 9];
+  return rows.flatMap((ty, ri) => cols.map((tx, ci) => ({ room: r, n: ri * 2 + ci + 1, tx, ty })));
+});
+
+export const PRIVATE_AREAS: PrivateArea[] = PODS.map((p) => ({
+  id: `${p.room.id}-${p.n}`,
+  zoneId: p.room.id,
+  n: p.n,
+  x: p.tx * TILE,
+  y: p.ty * TILE,
+  w: 6 * TILE,
+  h: 3 * TILE,
+  color: p.room.color,
+  npc: { x: (p.tx + 3) * TILE, y: (p.ty + 1) * TILE + 18 },
 }));
 
 // Blackboards sit on the 2-tile wall face above each room (6 tiles wide).
 const BOARD_TX: Record<string, number> = { 'pa-polite': 7, 'pa-leading': 31, 'pa-useful': 7, 'pa-smart': 31 };
 export const PRESENTATION_OBJECTS: PresentationObject[] = [
-  { id: 'obj-welcome', paId: null, x: 20 * TILE + 8, y: 2 * TILE + 10, w: 4 * TILE - 16, h: 2 * TILE - 26, label: 'Welcome Board' },
+  { id: 'obj-welcome', paId: null, x: 20 * TILE + 8, y: 2 * TILE + 10, w: 4 * TILE - 16, h: 2 * TILE - 26, label: 'welcome' },
   ...ROOMS.map((r) => ({
     id: `obj-${r.id.slice(3)}`,
     paId: r.id,
@@ -101,14 +132,9 @@ export const PRESENTATION_OBJECTS: PresentationObject[] = [
     y: r.boardTy * TILE + 10,
     w: 6 * TILE - 20,
     h: 2 * TILE - 26,
-    label: `${r.name} board`,
+    label: r.id,
   })),
 ];
-
-/** Where the AI tutor (owl) stands in each room — behind the teacher's desk. */
-export const ROOM_NPC: Record<string, { x: number; y: number }> = Object.fromEntries(
-  ROOMS.map((r) => [r.id, { x: (r.tx + 7.5) * TILE, y: (r.ty + 1) * TILE + 20 }]),
-);
 
 export const SPAWN = { x: 22 * TILE, y: 16 * TILE + 24 };
 
@@ -122,16 +148,16 @@ const tileAt = (x: number, y: number): T => (inside(x, y) ? (tiles[at(x, y)] as 
 const isWall = (x: number, y: number) => tileAt(x, y) === T.Wall;
 
 type Deco =
-  | 'desk' | 'chair' | 'teacherDesk' | 'bookshelf' | 'plant' | 'tree' | 'flower'
-  | 'bench' | 'rug' | 'lockers' | 'window' | 'clock' | 'sofa';
-interface DecoItem { kind: Deco; tx: number; ty: number; tw: number; th: number; color?: string }
+  | 'podRug' | 'table' | 'chairL' | 'chairR' | 'teacherDesk' | 'bookshelf' | 'plant' | 'tree' | 'flower'
+  | 'bench' | 'rug' | 'lockers' | 'window' | 'clock' | 'sofa' | 'globe' | 'fountain';
+interface DecoItem { kind: Deco; tx: number; ty: number; tw: number; th: number; color?: string; color2?: string; label?: string }
 const decos: DecoItem[] = [];
 
 function fill(x0: number, y0: number, x1: number, y1: number, t: T) {
   for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (inside(x, y)) tiles[at(x, y)] = t;
 }
-function deco(kind: Deco, tx: number, ty: number, tw = 1, th = 1, blocks = true, color?: string) {
-  decos.push({ kind, tx, ty, tw, th, color });
+function deco(kind: Deco, tx: number, ty: number, tw = 1, th = 1, blocks = true, extra: Partial<DecoItem> = {}) {
+  decos.push({ kind, tx, ty, tw, th, ...extra });
   if (blocks) for (let y = ty; y < ty + th; y++) for (let x = tx; x < tx + tw; x++) if (inside(x, y)) blocked[at(x, y)] = 1;
 }
 
@@ -150,27 +176,26 @@ function deco(kind: Deco, tx: number, ty: number, tw = 1, th = 1, blocks = true,
   // Front entrance + stone path out to the garden.
   fill(21, 28, 22, 28, T.Wood);
   fill(21, 29, 22, 31, T.Path);
-  fill(16, 30, 27, 30, T.Path);
+  fill(14, 30, 29, 30, T.Path);
 
   for (let i = 0; i < tiles.length; i++) if (tiles[i] === T.Wall) blocked[i] = 1;
 
-  // Furniture per room.
   for (const r of ROOMS) {
     const { tx, ty, tw, th } = r;
     deco('teacherDesk', tx + 6, ty + 1, 3, 1);
-    const rows = th >= 10 ? [ty + 4, ty + 7] : [ty + 3, ty + 6];
-    for (const y of rows) {
-      for (let c = 0; c < 4; c++) {
-        const x = tx + 1 + c * 4;
-        deco('desk', x, y, 2, 1, true, r.color);
-        deco('chair', x, y + 1, 1, 1, false, r.color);
-        deco('chair', x + 1, y + 1, 1, 1, false, r.color);
-      }
-    }
-    deco('bookshelf', tx + tw - 3, ty, 2, 1);
-    deco('plant', tx, ty);
-    deco('plant', tx + tw - 1, ty + th - 1);
+    // Keep the shelf and plants on the side away from the corridor door.
+    const far = r.doorSide === 'right' ? tx : tx + tw - 1;
+    deco('bookshelf', r.doorSide === 'right' ? tx + 1 : tx + tw - 3, ty, 2, 1);
+    deco('plant', far, ty);
+    deco('plant', far, ty + th - 1);
+    deco('globe', r.doorSide === 'right' ? tx + 10 : tx + 4, ty + 1, 1, 1);
     deco('clock', tx + 2, r.boardTy, 1, 1, false);
+  }
+  for (const p of PODS) {
+    deco('podRug', p.tx, p.ty, 6, 3, false, { color: p.room.rug[0], color2: p.room.rug[1], label: String(p.n) });
+    deco('table', p.tx + 2, p.ty + 1, 2, 1, true, { color: p.room.color });
+    deco('chairR', p.tx + 1, p.ty + 1, 1, 1, false, { color: p.room.color });
+    deco('chairL', p.tx + 4, p.ty + 1, 1, 1, false, { color: p.room.color });
   }
   // Windows along the outer top wall (outside the blackboards).
   for (const x of [4, 14, 26, 38]) deco('window', x, 2, 2, 1, false);
@@ -182,10 +207,12 @@ function deco(kind: Deco, tx: number, ty: number, tw = 1, th = 1, blocks = true,
   deco('plant', 20, 27); deco('plant', 23, 27);
   deco('sofa', 20, 10, 1, 2); deco('sofa', 23, 10, 1, 2);
   // Garden.
-  for (let x = 0; x < COLS; x += 3) { deco('tree', x, 0, 1, 1); if (x < 15 || x > 28) deco('tree', x, 31, 1, 1); }
+  for (let x = 0; x < COLS; x += 3) { deco('tree', x, 0, 1, 1); if (x < 13 || x > 30) deco('tree', x, 31, 1, 1); }
   for (let y = 3; y < ROWS - 1; y += 3) { deco('tree', 0, y); deco('tree', 43, y); }
-  for (const [x, y] of [[4, 29], [7, 30], [10, 29], [33, 29], [36, 30], [39, 29], [1, 2], [42, 26]]) deco('flower', x, y, 1, 1, false);
-  deco('bench', 12, 29, 2, 1); deco('bench', 30, 29, 2, 1);
+  for (const [x, y] of [[4, 29], [7, 30], [10, 29], [33, 29], [36, 30], [39, 29], [1, 2], [42, 26], [13, 31], [30, 31]]) deco('flower', x, y, 1, 1, false);
+  deco('bench', 10, 29, 2, 1); deco('bench', 32, 29, 2, 1);
+  deco('fountain', 17, 29, 2, 1);
+  deco('fountain', 25, 29, 2, 1);
 })();
 
 /* ─────────────────────────── queries ─────────────────────────── */
@@ -207,9 +234,18 @@ export function canStand(x: number, y: number): boolean {
   return true;
 }
 
+/** The private desk pod at a point (feet), if any. */
 export function findPaAt(x: number, y: number): PrivateArea | null {
   for (const pa of PRIVATE_AREAS) {
     if (x >= pa.x && x < pa.x + pa.w && y >= pa.y && y < pa.y + pa.h) return pa;
+  }
+  return null;
+}
+
+/** The big classroom at a point, if any (null = corridor / garden). */
+export function findZoneAt(x: number, y: number): Zone | null {
+  for (const z of ZONES) {
+    if (x >= z.x && x < z.x + z.w && y >= z.y && y < z.y + z.h) return z;
   }
   return null;
 }
@@ -319,23 +355,69 @@ function drawWall(ctx: CanvasRenderingContext2D, x: number, y: number) {
 function drawDeco(ctx: CanvasRenderingContext2D, d: DecoItem) {
   const { tx, ty, tw } = d;
   switch (d.kind) {
-    case 'desk': {
+    case 'podRug': {
+      // Private desk zone: rounded rug with a stitched border and a number plate.
       const w = tw * 16;
-      px(ctx, tx, ty, 1, 2, w - 2, 9, '#b07a4a');
-      px(ctx, tx, ty, 1, 2, w - 2, 2, '#c99160');
-      px(ctx, tx, ty, 1, 11, w - 2, 2, '#8a5c34');
-      px(ctx, tx, ty, 2, 13, 2, 3, '#6d4526'); px(ctx, tx, ty, w - 4, 13, 2, 3, '#6d4526');
-      // Book + pencil on top.
-      px(ctx, tx, ty, 4, 4, 6, 4, '#ffffff'); px(ctx, tx, ty, 7, 4, 1, 4, '#d0d0d0');
-      px(ctx, tx, ty, w - 9, 5, 5, 1, d.color ?? '#f5c542');
+      const h = d.th * 16;
+      px(ctx, tx, ty, 2, 1, w - 4, h - 2, d.color2 ?? '#999');
+      px(ctx, tx, ty, 1, 2, w - 2, h - 4, d.color2 ?? '#999');
+      px(ctx, tx, ty, 3, 2, w - 6, h - 4, d.color ?? '#ccc');
+      px(ctx, tx, ty, 2, 3, w - 4, h - 6, d.color ?? '#ccc');
+      for (let i = 5; i < w - 5; i += 4) {
+        px(ctx, tx, ty, i, 3, 2, 1, 'rgba(255,255,255,0.7)');
+        px(ctx, tx, ty, i, h - 4, 2, 1, 'rgba(255,255,255,0.7)');
+      }
+      // Number plate.
+      px(ctx, tx, ty, 3, 3, 9, 7, '#ffffff');
+      px(ctx, tx, ty, 3, 10, 9, 1, 'rgba(0,0,0,0.15)');
+      ctx.fillStyle = d.color2 ? shadeHex(d.color2, -70) : '#333';
+      ctx.font = `bold ${6 * PX}px Pretendard, system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(d.label ?? '', tx * TILE + 7.5 * PX, ty * TILE + 6.8 * PX);
       break;
     }
-    case 'chair':
-      px(ctx, tx, ty, 4, 2, 8, 3, d.color ?? '#5b8def');
-      px(ctx, tx, ty, 4, 5, 8, 5, '#8a5c34');
-      px(ctx, tx, ty, 4, 5, 8, 1, '#a36d42');
-      px(ctx, tx, ty, 5, 10, 1, 3, '#5a3a1f'); px(ctx, tx, ty, 10, 10, 1, 3, '#5a3a1f');
+    case 'table': {
+      const w = tw * 16;
+      px(ctx, tx, ty, 0, 12, w, 3, 'rgba(0,0,0,0.12)'); // shadow
+      px(ctx, tx, ty, 0, 1, w, 11, '#f7f1e6');
+      px(ctx, tx, ty, 0, 1, w, 2, '#ffffff');
+      px(ctx, tx, ty, 0, 10, w, 3, '#d8cdb8');
+      px(ctx, tx, ty, 1, 12, 2, 3, '#8a7a66'); px(ctx, tx, ty, w - 3, 12, 2, 3, '#8a7a66');
+      // Two notebooks facing each other + a pencil cup.
+      px(ctx, tx, ty, 3, 4, 7, 5, '#ffffff'); px(ctx, tx, ty, 3, 4, 7, 1, d.color ?? '#5b8def');
+      px(ctx, tx, ty, w - 10, 4, 7, 5, '#ffffff'); px(ctx, tx, ty, w - 10, 4, 7, 1, d.color ?? '#5b8def');
+      px(ctx, tx, ty, w / 2 - 1, 3, 3, 4, '#e0708c'); px(ctx, tx, ty, w / 2 - 1, 1, 1, 2, '#f7d64a'); px(ctx, tx, ty, w / 2 + 1, 1, 1, 2, '#4cc38a');
       break;
+    }
+    case 'chairR':
+    case 'chairL': {
+      // Side-view chair; back rest on the outside so the two sit face to face.
+      const back = d.kind === 'chairR' ? 3 : 11;
+      px(ctx, tx, ty, 4, 7, 8, 4, '#b07a4a');
+      px(ctx, tx, ty, 4, 7, 8, 1, '#c99160');
+      px(ctx, tx, ty, back, 0, 2, 11, d.color ?? '#5b8def');
+      px(ctx, tx, ty, back, 0, 2, 1, 'rgba(255,255,255,0.5)');
+      px(ctx, tx, ty, 5, 11, 1, 4, '#6d4526'); px(ctx, tx, ty, 10, 11, 1, 4, '#6d4526');
+      break;
+    }
+    case 'globe':
+      px(ctx, tx, ty, 6, 12, 4, 3, '#7a4f2d');
+      px(ctx, tx, ty, 7, 9, 2, 3, '#b8a07a');
+      px(ctx, tx, ty, 4, 1, 8, 8, '#4fa3e0');
+      px(ctx, tx, ty, 5, 0, 6, 10, '#4fa3e0');
+      px(ctx, tx, ty, 5, 2, 3, 3, '#5cc473'); px(ctx, tx, ty, 9, 5, 2, 3, '#5cc473');
+      px(ctx, tx, ty, 6, 1, 2, 1, '#bfe3ff');
+      break;
+    case 'fountain': {
+      const w = tw * 16;
+      px(ctx, tx, ty, 1, 4, w - 2, 11, '#b9b2a6');
+      px(ctx, tx, ty, 3, 6, w - 6, 7, '#6cc4f0');
+      px(ctx, tx, ty, 5, 8, w - 10, 2, '#a8e2fb');
+      px(ctx, tx, ty, w / 2 - 1, 0, 2, 8, '#d7d0c4');
+      px(ctx, tx, ty, w / 2 - 2, -2, 4, 2, '#a8e2fb');
+      break;
+    }
     case 'teacherDesk': {
       const w = tw * 16;
       px(ctx, tx, ty, 0, 3, w, 10, '#7a4f2d');
@@ -408,6 +490,12 @@ function drawDeco(ctx: CanvasRenderingContext2D, d: DecoItem) {
       px(ctx, tx, ty, 4, 2, 8, d.th * 16 - 4, '#f29bb0');
       break;
   }
+}
+
+function shadeHex(hex: string, amt: number): string {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v: number) => Math.max(0, Math.min(255, Math.round(v + amt)));
+  return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
 }
 
 // Blackboard frames are part of the static art; their content is DOM (boards).

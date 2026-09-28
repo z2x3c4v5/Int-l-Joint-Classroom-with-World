@@ -12,6 +12,7 @@ import {
   type Dir,
   type Look,
 } from '../game/sprites';
+import { useI18n, type StringKey } from '../lib/i18n';
 
 interface Props {
   look: Look;
@@ -23,34 +24,35 @@ const DIRS: Dir[] = ['down', 'left', 'up', 'right'];
 
 /** ZEP-style character customiser with a walking preview. */
 export default function AvatarPicker({ look, onChange, name }: Props) {
+  const { t } = useI18n();
   const set = (patch: Partial<Look>) => onChange({ ...look, ...patch });
   return (
     <div className="mt-3 flex flex-col items-center gap-4">
       <WalkingPreview look={look} name={name} />
       <div className="w-full space-y-3">
-        <Row label="Skin">
+        <Row label={t('avatar.skin')}>
           {SKINS.map((c, i) => (
             <Swatch key={c} color={c} active={look.skin === i} onClick={() => set({ skin: i })} />
           ))}
         </Row>
-        <Row label="Hair">
+        <Row label={t('avatar.hair')}>
           <div className="flex items-center gap-1 bg-white/15 rounded-full p-0.5">
             <Arrow onClick={() => set({ hair: (look.hair + HAIR_STYLES.length - 1) % HAIR_STYLES.length })}>‹</Arrow>
-            <span className="text-xs font-bold w-12 text-center">{HAIR_STYLES[look.hair]}</span>
+            <span className="text-xs font-bold w-14 text-center">{t(`hair.${look.hair}` as StringKey)}</span>
             <Arrow onClick={() => set({ hair: (look.hair + 1) % HAIR_STYLES.length })}>›</Arrow>
           </div>
         </Row>
-        <Row label="Color">
+        <Row label={t('avatar.color')}>
           {HAIR_COLORS.map((c, i) => (
             <Swatch key={c} color={c} active={look.hairColor === i} onClick={() => set({ hairColor: i })} />
           ))}
         </Row>
-        <Row label="Top">
+        <Row label={t('avatar.top')}>
           {SHIRTS.map((c, i) => (
             <Swatch key={c} color={c} active={look.shirt === i} onClick={() => set({ shirt: i })} />
           ))}
         </Row>
-        <Row label="Pants">
+        <Row label={t('avatar.pants')}>
           {PANTS.map((c, i) => (
             <Swatch key={c} color={c} active={look.pants === i} onClick={() => set({ pants: i })} />
           ))}
@@ -60,7 +62,7 @@ export default function AvatarPicker({ look, onChange, name }: Props) {
           onClick={() => onChange(randomLook())}
           className="w-full bg-white/15 hover:bg-white/25 rounded-xl py-2 text-sm font-bold transition"
         >
-          🎲 Random
+          {t('avatar.random')}
         </button>
       </div>
     </div>

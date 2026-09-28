@@ -8,12 +8,35 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../lib/firebase';
+import { useI18n } from '../lib/i18n';
+
+export type TutorAction = 'start' | 'next' | 'help' | 'feedback';
 
 export interface FacilitatorMessage {
   id: string;
   text: string;
-  action: 'start' | 'next' | 'help';
+  action: TutorAction;
   ts: number | null;
+  /** For feedback: what speech-to-text heard, and who spoke. */
+  heard?: string;
+  speaker?: string;
+}
+
+export interface TutorExtra {
+  lastUtterance?: string;
+  transcript?: string;
+}
+
+export function parseTutorMessage(id: string, v: Record<string, unknown>): FacilitatorMessage {
+  const ts = v.ts as { toMillis?: () => number } | undefined;
+  return {
+    id,
+    text: typeof v.text === 'string' ? v.text : '',
+    action: (['start', 'next', 'help', 'feedback'].includes(v.action as string) ? v.action : 'next') as TutorAction,
+    ts: ts?.toMillis?.() ?? null,
+    heard: typeof v.heard === 'string' ? v.heard : undefined,
+    speaker: typeof v.speaker === 'string' ? v.speaker : undefined,
+  };
 }
 
 /**
@@ -24,6 +47,7 @@ export interface FacilitatorMessage {
 export function useFacilitator(sessionCode: string, pairId: string | null) {
   const [messages, setMessages] = useState<FacilitatorMessage[]>([]);
   const [busy, setBusy] = useState(false);
+  const { lang } = useI18n();
 
   useEffect(() => {
     if (!pairId) return;
@@ -33,21 +57,11 @@ export function useFacilitator(sessionCode: string, pairId: string | null) {
       limit(50),
     );
     return onSnapshot(q, (snap) => {
-      setMessages(
-        snap.docs.map((d) => {
-          const v = d.data();
-          return {
-            id: d.id,
-            text: v.text ?? '',
-            action: (v.action ?? 'next') as FacilitatorMessage['action'],
-            ts: v.ts?.toMillis?.() ?? null,
-          };
-        }),
-      );
+      setMessages(snap.docs.map((d) => parseTutorMessage(d.id, d.data())));
     });
   }, [sessionCode, pairId]);
 
-  async function trigger(action: 'start' | 'next' | 'help', lastUtterance?: string) {
+  async function trigger(action: TutorAction, extra: TutorExtra = {}) {
     if (!pairId || busy) return;
     setBusy(true);
     try {
@@ -55,7 +69,9 @@ export function useFacilitator(sessionCode: string, pairId: string | null) {
         code: sessionCode,
         pairId,
         action,
-        lastUtterance: lastUtterance ?? '',
+        lang,
+        lastUtterance: extra.lastUtterance ?? '',
+        transcript: extra.transcript ?? '',
       });
     } finally {
       setBusy(false);

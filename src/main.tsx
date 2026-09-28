@@ -2,6 +2,7 @@ import React, { Suspense, lazy } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Preview from './pages/Preview';
+import { LangProvider } from './lib/i18n';
 import './styles.css';
 
 // App and TeacherPanel pull in Firebase at module load, which throws if the
@@ -20,6 +21,7 @@ function Loading() {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
+    <LangProvider>
     <BrowserRouter>
       <Suspense fallback={<Loading />}>
         <Routes>
@@ -29,5 +31,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         </Routes>
       </Suspense>
     </BrowserRouter>
+    </LangProvider>
   </React.StrictMode>,
 );

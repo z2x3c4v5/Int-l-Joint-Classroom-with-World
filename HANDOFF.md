@@ -23,7 +23,7 @@ OpenAI(gpt-4o-mini) 조합으로 동시 70명까지 안정. 월 비용 약 5만 
   - `mintLiveKitToken` — 세션×PA 검증 후 토큰 발급
   - `moderateUploadedImage` — Vision SafeSearch
   - `matchPlayers` — KR↔INTL 자동 페어링 (트랜잭션)
-  - `facilitatorTurn` — gpt-4o-mini로 AI 진행자 응답 생성 (Match 모드 페어)
+  - `facilitatorTurn` — gpt-4o-mini로 AI 진행자 응답 생성 (Match 모드 페어, 호출자가 페어 멤버인지 확인)
   - `roomFacilitatorTurn` — ZEP 모드 프라이빗 룸에 정확히 2명일 때 AI 진행자
     (RTDB 위치로 서버가 인원 확인, 룸별 테마, 8초 스로틀)
   - `endPair` — 페어 종료 + 옵션으로 재큐
@@ -89,6 +89,11 @@ OpenAI(gpt-4o-mini) 조합으로 동시 70명까지 안정. 월 비용 약 5만 
 - `GameWorld.tsx` — 캔버스 1장 + rAF 루프(이동/카메라/충돌/클릭 이동/점프/이모지/말하는 사람 표시). 좌표는 **발 중심**
 - `pages/Classroom.tsx` — ZEP식 UI(상단 카메라 줄, 하단 툴바, 우측 AI 튜터), `/preview` 는 Firebase 없이 봇이 돌아다니는 데모
 - 이동 키는 `e.code` 기준(한글 IME에서도 WASD 동작)
+- **공간 구조**: 교실 4개(zone: pa-polite/leading/useful/smart) 안에 1:1 책상 구역 4개씩(프라이빗: pa-polite-1…4, 총 16개)
+  - 복도·교실의 빈 공간 = 거리 기반 대화(LiveKit 룸 `pa-hall` 또는 교실 id, 벽 너머는 안 들림)
+  - 책상 구역 = 그 책상 전용 LiveKit 룸, 정확히 2명이면 그 책상의 AI 튜터(부엉이)가 진행
+- **AI 튜터 발표 듣기**: 튜터 창 "🎤 발표하기" → 브라우저 음성인식(Web Speech, en-US) → `feedback` 액션으로 칭찬/교정/후속질문. 음성인식 미지원 브라우저는 입력창으로 대체
+- **한/영 전환**: `src/lib/i18n.tsx`에 모든 UI 문구(ko/en). `LangToggle` 버튼, localStorage 저장. 튜터는 영어로 말하고, 한국어 모드면 help/feedback에 💡 한국어 한 줄 추가
 
 ## 4. 데이터 모델 (Firestore)
 

@@ -3,8 +3,10 @@ import {
   MAP_HEIGHT,
   MAP_WIDTH,
   PRIVATE_AREAS,
+  ZONES,
   canStand,
   findPaAt,
+  findZoneAt,
   getMapCanvas,
 } from './map';
 import { drawCharacter, SPRITE_H, type Dir, type Look } from './sprites';
@@ -18,7 +20,10 @@ export interface WorldPlayer {
   dir: Dir;
   moving: boolean;
   look: Look;
+  /** Private desk pod, if sitting at one. */
   paId: string | null;
+  /** Big classroom they're in (null = corridor/garden). */
+  zone: string | null;
   emo?: string;
   emoTs?: number;
 }
@@ -29,6 +34,12 @@ export interface MyState {
   dir: Dir;
   moving: boolean;
   paId: string | null;
+  zone: string | null;
+}
+
+/** Who can hear whom: same desk pod, or same open area (room / hallway). */
+export function audibleScope(paId: string | null, zone: string | null) {
+  return paId ?? zone ?? 'hall';
 }
 
 interface Props {
@@ -42,8 +53,8 @@ interface Props {
   myEmo?: { emo: string; ts: number } | null;
   /** Hallway hearing radius (world px); drawn around me when outside rooms. */
   hearRadius?: number;
-  /** Positions of AI tutor owls to draw. */
-  npcs?: Array<{ x: number; y: number }>;
+  /** AI tutor owls to draw (one per desk pod); `active` ones glow and are labelled. */
+  npcs?: Array<{ x: number; y: number; active?: boolean; label?: string }>;
   onState: (s: MyState) => void;
   /** DOM laid out in world coordinates (boards, speech bubbles). */
   worldLayer?: ReactNode;
@@ -84,6 +95,7 @@ export default function GameWorld(props: Props) {
     dir: 'down' as Dir,
     moving: false,
     paId: findPaAt(props.spawn.x, props.spawn.y)?.id ?? null,
+    zone: findZoneAt(props.spawn.x, props.spawn.y)?.id ?? null,
     stepT: 0,
     jumpT: -1,
   });
@@ -188,8 +200,10 @@ export default function GameWorld(props: Props) {
         if (m.jumpT > 0.45) m.jumpT = -1;
       }
       const paId = findPaAt(m.x, m.y)?.id ?? null;
-      const roomChanged = paId !== m.paId;
+      const zone = findZoneAt(m.x, m.y)?.id ?? null;
+      const roomChanged = paId !== m.paId || zone !== m.zone;
       m.paId = paId;
+      m.zone = zone;
 
       // Report to the parent (presence + A/V) at ≤ 11 Hz, instantly on room
       // change or when stopping.
@@ -197,7 +211,7 @@ export default function GameWorld(props: Props) {
       const key = `${Math.round(m.x)},${Math.round(m.y)},${m.dir},${m.moving}`;
       if (key !== lastSent.current.key && (roomChanged || wasMoving !== m.moving || now - lastSent.current.t > 90)) {
         lastSent.current = { t: now, key };
-        propsRef.current.onState({ x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, moving: m.moving, paId });
+        propsRef.current.onState({ x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, moving: m.moving, paId, zone });
       }
 
       // Remote players glide toward their last reported position.
@@ -265,12 +279,20 @@ export default function GameWorld(props: Props) {
         ctx.stroke();
       }
 
+      const t = performance.now() / 1000;
       for (const n of p.npcs ?? []) {
-        ctx.font = '38px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+        const bob = Math.sin(t * 2 + n.x) * 2;
+        if (n.active) {
+          ctx.fillStyle = 'rgba(253,224,71,0.35)';
+          ctx.beginPath();
+          ctx.arc(n.x, n.y - 12, 26 + Math.sin(t * 3) * 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.font = `${n.active ? 34 : 26}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
-        ctx.fillText('🦉', n.x, n.y);
-        nameTag(ctx, 'AI Tutor', n.x, n.y - 40, '#fde047', '#3b2a00');
+        ctx.fillText('🦉', n.x, n.y + bob);
+        if (n.active && n.label) nameTag(ctx, n.label, n.x, n.y - 44 + bob, '#fde047', '#3b2a00');
       }
 
       // Characters, back-to-front.
@@ -289,7 +311,8 @@ export default function GameWorld(props: Props) {
 
       for (const e of ents) {
         // People behind a room wall are only drawn faintly — you can't reach them.
-        const otherRoom = !e.isMe && (findPaAt(e.x, e.y)?.id ?? null) !== m.paId && (m.paId !== null || findPaAt(e.x, e.y) !== null);
+        const theirScope = audibleScope(findPaAt(e.x, e.y)?.id ?? null, findZoneAt(e.x, e.y)?.id ?? null);
+        const otherRoom = !e.isMe && theirScope !== audibleScope(m.paId, m.zone);
         ctx.globalAlpha = otherRoom ? 0.55 : 1;
         drawCharacter(ctx, e.look, e.dir, e.frame, e.x, e.y, e.lift);
         const talking = e.isMe ? p.meSpeaking : p.speaking?.has(e.id);
@@ -299,14 +322,25 @@ export default function GameWorld(props: Props) {
         ctx.globalAlpha = 1;
       }
 
-      // Inside a private room: dim everything outside it (ZEP-style focus).
-      if (m.paId) {
-        const pa = PRIVATE_AREAS.find((a) => a.id === m.paId)!;
-        ctx.fillStyle = 'rgba(15,12,35,0.45)';
+      // Focus: at a desk pod, dim everything else; in a classroom, dim the rest lightly.
+      const focus = m.paId
+        ? { r: PRIVATE_AREAS.find((a) => a.id === m.paId)!, a: 0.5 }
+        : m.zone
+          ? { r: ZONES.find((z) => z.id === m.zone)!, a: 0.28 }
+          : null;
+      if (focus) {
+        ctx.fillStyle = `rgba(15,12,35,${focus.a})`;
         ctx.beginPath();
         ctx.rect(cx, cy, w, h);
-        ctx.rect(pa.x, pa.y, pa.w, pa.h);
+        ctx.rect(focus.r.x, focus.r.y, focus.r.w, focus.r.h);
         ctx.fill('evenodd');
+        if (m.paId) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+          ctx.lineWidth = 3;
+          ctx.setLineDash([10, 6]);
+          ctx.strokeRect(focus.r.x + 2, focus.r.y + 2, focus.r.w - 4, focus.r.h - 4);
+          ctx.setLineDash([]);
+        }
       }
 
       if (layerRef.current) layerRef.current.style.transform = `translate(${-cx}px, ${-cy}px)`;

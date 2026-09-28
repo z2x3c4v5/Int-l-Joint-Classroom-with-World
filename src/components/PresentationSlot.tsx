@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { PresentationObject } from '../lib/mapConfig';
 import type { SlotState } from '../hooks/usePresentationObjects';
 import { attachSlidesUrl, normaliseSlidesUrl, uploadPresentationImage } from '../lib/uploadImage';
+import { useI18n, type StringKey } from '../lib/i18n';
 
 interface Props {
   object: PresentationObject;
@@ -17,12 +18,13 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [slidesInput, setSlidesInput] = useState('');
+  const { t } = useI18n();
 
   async function handlePick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith('image/')) return setError('Image files only.');
-    if (file.size > 8 * 1024 * 1024) return setError('Max 8MB.');
+    if (!file.type.startsWith('image/')) return setError(t('board.errImage'));
+    if (file.size > 8 * 1024 * 1024) return setError(t('board.errSize'));
     setBusy(true);
     setError(null);
     try {
@@ -39,7 +41,7 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
   async function handleSlidesSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!normaliseSlidesUrl(slidesInput)) {
-      setError('Paste a Google Slides share link (docs.google.com/presentation/...).');
+      setError(t('board.errSlides'));
       return;
     }
     setBusy(true);
@@ -79,18 +81,18 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
         />
       ) : slidesPending ? (
         <div className="w-full h-full flex flex-col items-center justify-center text-white/80 text-xs px-2 text-center">
-          <span>📊 Slides waiting for teacher approval</span>
+          <span>{t('board.pending')}</span>
         </div>
       ) : object.id === 'obj-welcome' ? (
         <div className="w-full h-full flex flex-col items-center justify-center text-center text-white px-2 leading-tight">
-          <div className="text-xs font-extrabold tracking-wide">🌐 GLOBAL ENGLISH CLASSROOM</div>
+          <div className="text-xs font-extrabold tracking-wide">{t('board.welcome1')}</div>
           <div className="text-[10px] font-semibold opacity-80 mt-0.5">
-            Korea · Malaysia · Taiwan · Thailand
+            {t('board.welcome2')}
           </div>
         </div>
       ) : (
         <div className="w-full h-full flex items-center justify-center text-white/75 text-sm font-semibold text-center px-2 tracking-wide [font-family:'Comic_Sans_MS','Chalkboard_SE',Pretendard,sans-serif]">
-          {rejected ? '⚠️ Removed by moderation' : object.label.replace(' board', '')}
+          {rejected ? t('board.removed') : t(`room.${object.label}` as StringKey)}
         </div>
       )}
       {pending && !slidesPending && (
@@ -98,7 +100,7 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
       )}
       {state?.ownerName && (
         <div className="absolute top-0 left-0 right-0 bg-black/60 text-white text-[10px] px-1 py-0.5 truncate">
-          by {state.ownerName}
+          {t('board.by', { name: state.ownerName })}
         </div>
       )}
       {reachable && !pickerOpen && (
@@ -108,7 +110,7 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
           disabled={busy}
           className="absolute bottom-1 right-1 bg-white/90 hover:bg-white disabled:bg-slate-500 text-slate-800 text-[10px] font-bold px-2 py-1 rounded-full shadow"
         >
-          {state?.imageUrl || state?.slidesUrl ? '↻ Replace' : '＋ Add'}
+          {state?.imageUrl || state?.slidesUrl ? t('board.replace') : t('board.add')}
         </button>
       )}
       {reachable && pickerOpen && (
@@ -118,25 +120,25 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
             disabled={busy}
             className="bg-blue-600 hover:bg-blue-500 py-1.5 rounded"
           >
-            {busy ? '…' : '🖼 Upload image'}
+            {busy ? '…' : t('board.upload')}
           </button>
           <form onSubmit={handleSlidesSubmit} className="flex gap-1">
             <input
               type="text"
               value={slidesInput}
               onChange={(e) => setSlidesInput(e.target.value)}
-              placeholder="Paste Google Slides URL"
+              placeholder={t('board.slidesPh')}
               className="flex-1 px-1 rounded bg-slate-800 border border-slate-600 text-[10px]"
             />
             <button
               disabled={busy}
               className="bg-emerald-600 hover:bg-emerald-500 px-2 rounded"
             >
-              Go
+              {t('board.go')}
             </button>
           </form>
           <button onClick={() => setPickerOpen(false)} className="text-slate-400 hover:text-white text-[10px]">
-            cancel
+            {t('common.cancel')}
           </button>
         </div>
       )}

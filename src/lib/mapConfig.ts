@@ -5,9 +5,11 @@ export {
   TILE,
   PRIVATE_AREAS,
   PRESENTATION_OBJECTS,
-  ROOM_NPC,
+  ZONES,
   SPAWN,
   findPaAt,
+  findZoneAt,
+  type Zone,
   type PrivateArea,
   type PresentationObject,
 } from '../game/map';

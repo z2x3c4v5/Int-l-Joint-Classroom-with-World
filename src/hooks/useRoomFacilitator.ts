@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { collection, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../lib/firebase';
-import type { FacilitatorMessage } from './useFacilitator';
+import { parseTutorMessage, type FacilitatorMessage, type TutorAction, type TutorExtra } from './useFacilitator';
+import { useI18n } from '../lib/i18n';
 
 /**
  * AI tutor feed for a free-mode Private Area. Messages are tagged with the
@@ -12,6 +13,7 @@ import type { FacilitatorMessage } from './useFacilitator';
 export function useRoomFacilitator(sessionCode: string, paId: string | null, pairKey: string | null) {
   const [all, setAll] = useState<(FacilitatorMessage & { pairKey: string })[]>([]);
   const [busy, setBusy] = useState(false);
+  const { lang } = useI18n();
 
   useEffect(() => {
     setAll([]);
@@ -27,13 +29,7 @@ export function useRoomFacilitator(sessionCode: string, paId: string | null, pai
       setAll(
         [...snap.docs].reverse().map((d) => {
           const v = d.data();
-          return {
-            id: d.id,
-            text: v.text ?? '',
-            action: (v.action ?? 'next') as FacilitatorMessage['action'],
-            ts: v.ts?.toMillis?.() ?? null,
-            pairKey: v.pairKey ?? '',
-          };
+          return { ...parseTutorMessage(d.id, v), pairKey: typeof v.pairKey === 'string' ? v.pairKey : '' };
         }),
       );
     });
@@ -41,7 +37,7 @@ export function useRoomFacilitator(sessionCode: string, paId: string | null, pai
 
   const messages = all.filter((m) => m.pairKey === pairKey);
 
-  async function trigger(action: 'start' | 'next' | 'help', lastUtterance?: string) {
+  async function trigger(action: TutorAction, extra: TutorExtra = {}) {
     if (!paId || !pairKey || busy) return;
     setBusy(true);
     try {
@@ -49,7 +45,9 @@ export function useRoomFacilitator(sessionCode: string, paId: string | null, pai
         code: sessionCode,
         paId,
         action,
-        lastUtterance: lastUtterance ?? '',
+        lang,
+        lastUtterance: extra.lastUtterance ?? '',
+        transcript: extra.transcript ?? '',
       });
     } finally {
       setBusy(false);

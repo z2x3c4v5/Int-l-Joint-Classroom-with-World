@@ -10,6 +10,7 @@ export interface MyPresence {
   x: number;
   y: number;
   paId: string | null;
+  zone: string | null;
   dir: Dir;
   mv: boolean;
   emo?: string | null;
@@ -37,6 +38,7 @@ function sanitize(uid: string, raw: unknown): WorldPlayer | null {
     moving: v.mv === true,
     look: decodeLook(v.look, name),
     paId: typeof v.paId === 'string' && /^pa-[a-z0-9-]+$/.test(v.paId) ? v.paId : null,
+    zone: typeof v.zone === 'string' && /^pa-[a-z]+$/.test(v.zone) ? v.zone : null,
     emo: typeof v.emo === 'string' && EMOJIS.has(v.emo) ? v.emo : undefined,
     emoTs: typeof v.emoTs === 'number' ? v.emoTs : undefined,
   };
@@ -51,7 +53,7 @@ export function usePresence(sessionCode: string, myName: string, myLook: string)
   const [others, setOthers] = useState<Record<string, WorldPlayer>>({});
   const lastWriteRef = useRef(0);
   const trailingRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const localRef = useRef<MyPresence>({ x: SPAWN.x, y: SPAWN.y, paId: null, dir: 'down', mv: false });
+  const localRef = useRef<MyPresence>({ x: SPAWN.x, y: SPAWN.y, paId: null, zone: null, dir: 'down', mv: false });
 
   function flush() {
     trailingRef.current = null;
@@ -66,6 +68,7 @@ export function usePresence(sessionCode: string, myName: string, myLook: string)
       x: l.x,
       y: l.y,
       paId: l.paId,
+      zone: l.zone,
       dir: l.dir,
       mv: l.mv,
       emo: l.emo ?? null,

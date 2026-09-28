@@ -257,118 +257,182 @@ export const matchPlayers = onDocumentCreated(
   },
 );
 
-/* ─────────────────────────  AI facilitator  ─────────────────────────
+/* ─────────────────────────  AI tutor (shared)  ─────────────────────────
  *
- * The facilitator is a GPT-4o-mini bot that drops short coaching prompts
- * into a pair room. Each call appends one new message to
- * sessions/{code}/pairs/{pairId}/facilitatorMessages so every member sees
- * it instantly through onSnapshot.
- *
- * Action types:
- *   - "start"   first prompt right after the pair forms
- *   - "next"    student presses "Give us a new topic"
- *   - "help"    student presses "I'm stuck — help me say it"
+ * One GPT-4o-mini "teacher" used by both the 1:1 match rooms and the desk
+ * pods of the school map. Actions:
+ *   - "start"     greet a new pair with a first question
+ *   - "next"      a fresh follow-up question
+ *   - "help"      a student is stuck → one sentence they can copy
+ *   - "feedback"  a student gave a short talk (browser speech-to-text):
+ *                 praise, fix 1–2 mistakes, ask the partner a follow-up
+ * lang = 'ko' adds a short Korean hint to help/feedback so beginners follow.
  */
+type TutorAction = 'start' | 'next' | 'help' | 'feedback';
+const TUTOR_ACTIONS: TutorAction[] = ['start', 'next', 'help', 'feedback'];
+
+interface TutorInput {
+  action: TutorAction;
+  names: string;
+  context: string;
+  theme: string;
+  lastUtterance?: string;
+  transcript?: string;
+  speaker?: string;
+  lang: 'ko' | 'en';
+  history?: string;
+}
+
+async function askTutor(input: TutorInput): Promise<string> {
+  const system = [
+    'You are a warm English-conversation teacher for elementary-school students (ages 10–13, A1–A2 level).',
+    input.context,
+    `Practice focus: ${input.theme}.`,
+    'Use simple words and short sentences. Never reveal you are an AI; speak as a kind classroom teacher.',
+    'Address the students by name and make them take turns.',
+    input.action === 'feedback'
+      ? 'For feedback: at most 70 English words.'
+      : 'Keep every response under 40 English words and end with one clear, easy question.',
+    input.lang === 'ko' && (input.action === 'help' || input.action === 'feedback')
+      ? 'After the English, add ONE short line starting with "💡" in Korean that explains the key point for a Korean child.'
+      : 'Reply in English only.',
+  ].join(' ');
+
+  let user: string;
+  switch (input.action) {
+    case 'start':
+      user = `Greet ${input.names} in one short sentence, then ask a first easy question about the practice focus. Say who answers first.`;
+      break;
+    case 'next':
+      user = 'Keep the conversation going with a fresh follow-up question. Let the other student answer first this time.';
+      break;
+    case 'help': {
+      const stuck = (input.lastUtterance ?? '').slice(0, 200);
+      user = stuck
+        ? `A student is stuck. They were trying to say: "${stuck}". Give one short sentence they can copy, then ask them to say it.`
+        : 'A student is stuck on the last question. Give one short example answer they can copy, then ask them to try.';
+      break;
+    }
+    case 'feedback': {
+      const talk = (input.transcript ?? '').slice(0, 1500);
+      user = [
+        `${input.speaker ?? 'A student'} just gave a short talk in English. Speech-to-text heard:`,
+        `"""${talk}"""`,
+        'Reply in this shape (plain text, no markdown headings):',
+        '⭐ one specific praise about the content.',
+        '✏️ up to two corrections as: "wrong" → "better" (skip if there are none; ignore speech-to-text noise).',
+        `❓ one follow-up question for the OTHER student to ask or answer about the talk.`,
+      ].join('\n');
+      break;
+    }
+  }
+  if (input.history) user += `\n\nYour previous lines to them (do not repeat):\n${input.history}`;
+
+  const apiKey = OPENAI_API_KEY.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'OPENAI_API_KEY not set.');
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      temperature: 0.7,
+      // Feedback needs room for praise + corrections; everything else stays short.
+      max_tokens: input.action === 'feedback' ? 260 : 140,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new HttpsError('internal', `OpenAI failed: ${txt.slice(0, 200)}`);
+  }
+  const json = (await res.json()) as { choices: Array<{ message: { content: string } }> };
+  return json.choices?.[0]?.message?.content?.trim() ?? '';
+}
+
+interface TutorRequest {
+  action?: string;
+  lastUtterance?: string;
+  transcript?: string;
+  lang?: string;
+}
+
+function parseTutorRequest(d: TutorRequest) {
+  const action = d.action as TutorAction;
+  if (!TUTOR_ACTIONS.includes(action)) throw new HttpsError('invalid-argument', 'Bad action.');
+  const transcript = typeof d.transcript === 'string' ? d.transcript.trim().slice(0, 1500) : '';
+  if (action === 'feedback' && transcript.length < 3) throw new HttpsError('invalid-argument', 'Nothing to give feedback on.');
+  return {
+    action,
+    transcript,
+    lastUtterance: typeof d.lastUtterance === 'string' ? d.lastUtterance.slice(0, 200) : '',
+    lang: (d.lang === 'ko' ? 'ko' : 'en') as 'ko' | 'en',
+  };
+}
+
+/* ─────────────────────────  AI tutor: match mode  ───────────────────────── */
+
 export const facilitatorTurn = onCall(
   { secrets: [OPENAI_API_KEY], region: 'us-central1', timeoutSeconds: 30 },
   async (req) => {
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
-    const { code, pairId, action, lastUtterance } = req.data as {
-      code?: string;
-      pairId?: string;
-      action?: 'start' | 'next' | 'help';
-      lastUtterance?: string;
-    };
-    if (!code || !pairId || !action) throw new HttpsError('invalid-argument', 'Bad input.');
+    const data = req.data as TutorRequest & { code?: string; pairId?: string };
+    const { code, pairId } = data;
+    if (!code || !pairId) throw new HttpsError('invalid-argument', 'Bad input.');
     if (!SESSION_RE.test(code)) throw new HttpsError('invalid-argument', 'Bad code.');
+    const { action, transcript, lastUtterance, lang } = parseTutorRequest(data);
 
     const db = getFirestore();
     const pairSnap = await db.doc(`sessions/${code}/pairs/${pairId}`).get();
     if (!pairSnap.exists) throw new HttpsError('not-found', 'Pair not found.');
     const pair = pairSnap.data()!;
-    const members = pair.members as Array<{ name: string; country: string; topic?: string | null }>;
+    const members = pair.members as Array<{ uid: string; name: string; country: string; topic?: string | null }>;
+    const me = members.find((m) => m.uid === req.auth!.uid);
+    if (!me) throw new HttpsError('permission-denied', 'You are not in this pair.');
 
-    const memberLine = members
-      .map((m) => `${m.name} (${m.country === 'KR' ? 'Korean student' : 'International student'})`)
+    const names = members
+      .map((m) => `${m.name} (${m.country === 'KR' ? 'Korean student' : 'international student'})`)
       .join(' and ');
+    const topic = pair.topic ?? members.map((m) => m.topic).find(Boolean) ?? 'school life';
 
-    const sharedTopic =
-      pair.topic ?? members.map((m) => m.topic).find(Boolean) ?? 'school life';
-
-    const system = [
-      'You are a friendly English-conversation facilitator for elementary-school students (ages 10–13).',
-      'You are speaking to a Korean student paired with an overseas student.',
-      'Keep every response under 35 English words, simple A2-level vocabulary, encouraging tone.',
-      'Never reveal you are an AI. Speak as a kind classroom teacher.',
-      'Always end with one clear, easy question that BOTH students can answer in turn.',
-    ].join(' ');
-
-    let userPrompt = '';
-    if (action === 'start') {
-      userPrompt = `Introduce yourself in one short sentence, then give ${memberLine} a friendly opening question about "${sharedTopic}".`;
-    } else if (action === 'next') {
-      userPrompt = `Give ${memberLine} a fresh, fun follow-up question about "${sharedTopic}" or a related daily-life topic. Vary from previous questions.`;
-    } else {
-      const stuck = (lastUtterance ?? '').slice(0, 200);
-      userPrompt = `A student is stuck. They were trying to say: "${stuck}". Help them with one short English sentence they can copy, then ask them to repeat it together.`;
-    }
-
-    const apiKey = OPENAI_API_KEY.value();
-    if (!apiKey) throw new HttpsError('failed-precondition', 'OPENAI_API_KEY not set.');
-
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        temperature: 0.8,
-        max_tokens: 120,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: userPrompt },
-        ],
-      }),
+    const text = await askTutor({
+      action,
+      names,
+      context: 'A Korean student is paired 1:1 with an overseas student on video.',
+      theme: String(topic),
+      lastUtterance,
+      transcript,
+      speaker: me.name,
+      lang,
     });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new HttpsError('internal', `OpenAI failed: ${txt.slice(0, 200)}`);
-    }
-    const json = (await res.json()) as {
-      choices: Array<{ message: { content: string } }>;
-    };
-    const text = json.choices?.[0]?.message?.content?.trim() ?? '';
 
-    await db
-      .collection(`sessions/${code}/pairs/${pairId}/facilitatorMessages`)
-      .add({
-        role: 'facilitator',
-        text,
-        action,
-        ts: FieldValue.serverTimestamp(),
-      });
+    await db.collection(`sessions/${code}/pairs/${pairId}/facilitatorMessages`).add({
+      role: 'facilitator',
+      text,
+      action,
+      ...(action === 'feedback' ? { heard: transcript, speaker: me.name } : {}),
+      ts: FieldValue.serverTimestamp(),
+    });
     return { ok: true, text };
   },
 );
 
-/* ─────────────────────  Private-area AI facilitator  ─────────────────────
+/* ─────────────────────  AI tutor: school-map desk pods  ─────────────────────
  *
- * Free (ZEP) mode: when EXACTLY two students stand inside the same Private
- * Area, an AI tutor leads their conversation. Who is in the room is read
- * from RTDB presence on the server (never trusted from the client), and the
- * caller must be one of the two. Messages go to
+ * When EXACTLY two students sit at the same desk pod, the tutor leads their
+ * talk. Who is there is read from RTDB presence on the server (never trusted
+ * from the client), and the caller must be one of the two. Messages go to
  * sessions/{code}/rooms/{paId}/facilitatorMessages tagged with a pairKey
- * (sorted uids) so a new duo in the same room starts a fresh conversation.
- *
- * A per-room state doc throttles calls so both clients (or a double click)
- * can't make the tutor talk twice in a row.
+ * (sorted uids) so a new duo at the same desk starts fresh. A per-desk state
+ * doc throttles calls so both clients can't make the tutor talk twice.
  */
 const PA_RE = /^pa-[a-z0-9-]+$/;
 const MIN_TURN_GAP_MS = 8_000;
+const MIN_FEEDBACK_GAP_MS = 3_000;
 
-// Each ZEP room has a theme the tutor steers toward.
+// Each classroom has a theme; its desk pods (pa-polite-1 …) inherit it.
 const ROOM_THEMES: Record<string, { name: string; theme: string }> = {
   'pa-polite': { name: 'Polite Room', theme: 'polite expressions (please, thank you, excuse me, may I…)' },
   'pa-leading': { name: 'Leading Room', theme: 'taking turns leading: asking and answering questions' },
@@ -380,17 +444,11 @@ export const roomFacilitatorTurn = onCall(
   { secrets: [OPENAI_API_KEY], region: 'us-central1', timeoutSeconds: 30 },
   async (req) => {
     if (!req.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
-    const { code, paId, action, lastUtterance } = req.data as {
-      code?: string;
-      paId?: string;
-      action?: 'start' | 'next' | 'help';
-      lastUtterance?: string;
-    };
+    const data = req.data as TutorRequest & { code?: string; paId?: string };
+    const { code, paId } = data;
     if (!code || !SESSION_RE.test(code)) throw new HttpsError('invalid-argument', 'Bad code.');
     if (!paId || !PA_RE.test(paId)) throw new HttpsError('invalid-argument', 'Bad paId.');
-    if (action !== 'start' && action !== 'next' && action !== 'help') {
-      throw new HttpsError('invalid-argument', 'Bad action.');
-    }
+    const { action, transcript, lastUtterance, lang } = parseTutorRequest(data);
 
     const db = getFirestore();
     const sessionSnap = await db.doc(`sessions/${code}`).get();
@@ -398,16 +456,15 @@ export const roomFacilitatorTurn = onCall(
       throw new HttpsError('failed-precondition', 'Session is not open.');
     }
 
-    // Who is actually standing in this room right now?
+    // Who is actually sitting at this desk right now?
     const playersSnap = await getDatabase().ref(`rooms/${code}/players`).get();
     const players = (playersSnap.val() ?? {}) as Record<string, { name?: string; paId?: string | null }>;
     const inRoom = Object.entries(players)
       .filter(([, p]) => p?.paId === paId)
       .map(([uid, p]) => ({ uid, name: String(p.name ?? 'Student').slice(0, 16) }))
       .sort((a, b) => (a.uid < b.uid ? -1 : 1));
-    if (!inRoom.some((p) => p.uid === req.auth!.uid)) {
-      throw new HttpsError('permission-denied', 'You are not in this room.');
-    }
+    const me = inRoom.find((p) => p.uid === req.auth!.uid);
+    if (!me) throw new HttpsError('permission-denied', 'You are not at this desk.');
     if (inRoom.length !== 2) return { ok: false, skipped: 'not-a-pair' };
     const pairKey = inRoom.map((p) => p.uid).join('_');
 
@@ -420,7 +477,8 @@ export const roomFacilitatorTurn = onCall(
       const since = Date.now() - last;
       // A duo gets one greeting per minute (a failed greeting can be retried).
       if (action === 'start' && samePair && since < 60_000) return false;
-      if (samePair && since < MIN_TURN_GAP_MS) return false;
+      const gap = action === 'feedback' ? MIN_FEEDBACK_GAP_MS : MIN_TURN_GAP_MS;
+      if (samePair && since < gap) return false;
       tx.set(stateRef, { pairKey, lastTurnAt: FieldValue.serverTimestamp() }, { merge: true });
       return true;
     });
@@ -437,65 +495,27 @@ export const roomFacilitatorTurn = onCall(
       .map((m) => `- ${String(m.text ?? '')}`)
       .join('\n');
 
-    const room = ROOM_THEMES[paId] ?? { name: 'classroom', theme: 'daily life' };
+    const room = ROOM_THEMES[paId.replace(/-\d+$/, '')] ?? { name: 'classroom', theme: 'daily life' };
     const names = inRoom.map((p) => p.name).join(' and ');
 
-    const system = [
-      'You are a friendly English-conversation facilitator for elementary-school students (ages 10–13).',
-      `Two students, ${names}, just met in the ${room.name} of a virtual classroom. One may be Korean and one from another country.`,
-      `This room practises: ${room.theme}.`,
-      'Keep every response under 35 English words, simple A2-level vocabulary, encouraging tone.',
-      'Never reveal you are an AI. Speak as a kind classroom teacher.',
-      'Address the students by name and make them take turns: say who answers first.',
-      'Always end with one clear, easy question.',
-    ].join(' ');
-
-    let userPrompt: string;
-    if (action === 'start') {
-      userPrompt = `Greet ${names} in one short sentence, then ask a first easy question that fits the room.`;
-    } else if (action === 'next') {
-      userPrompt = `Keep the conversation going with a fresh follow-up question. Let the other student answer first this time.`;
-    } else {
-      const stuck = (lastUtterance ?? '').slice(0, 200);
-      userPrompt = stuck
-        ? `A student is stuck. They were trying to say: "${stuck}". Give one short sentence they can copy, then ask them to say it.`
-        : `A student is stuck on the last question. Give one short example answer they can copy, then ask them to try.`;
-    }
-    if (history) userPrompt += `\n\nYour previous lines to them (do not repeat):\n${history}`;
-
-    const apiKey = OPENAI_API_KEY.value();
-    if (!apiKey) throw new HttpsError('failed-precondition', 'OPENAI_API_KEY not set.');
-
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        temperature: 0.8,
-        max_tokens: 120,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: userPrompt },
-        ],
-      }),
+    const text = await askTutor({
+      action,
+      names,
+      context: `Two students, ${names}, sit face to face at a desk in the ${room.name} of a virtual school. One may be Korean and one from another country.`,
+      theme: room.theme,
+      lastUtterance,
+      transcript,
+      speaker: me.name,
+      lang,
+      history,
     });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new HttpsError('internal', `OpenAI failed: ${txt.slice(0, 200)}`);
-    }
-    const json = (await res.json()) as {
-      choices: Array<{ message: { content: string } }>;
-    };
-    const text = json.choices?.[0]?.message?.content?.trim() ?? '';
 
     await msgCol.add({
       role: 'facilitator',
       text,
       action,
       pairKey,
+      ...(action === 'feedback' ? { heard: transcript, speaker: me.name } : {}),
       ts: FieldValue.serverTimestamp(),
     });
     return { ok: true, text };

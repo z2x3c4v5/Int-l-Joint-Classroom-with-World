@@ -3,6 +3,7 @@ import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, ensureSignedIn, functions } from '../lib/firebase';
 import { isValidSessionCode, normaliseSessionCode } from '../lib/session';
+import { LangToggle, useI18n } from '../lib/i18n';
 
 interface SessionRow {
   id: string;
@@ -24,6 +25,7 @@ interface ObjectDoc {
 }
 
 export default function TeacherPanel() {
+  const { t } = useI18n();
   const [passcode, setPasscode] = useState('');
   const [unlocked, setUnlocked] = useState(false);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
@@ -31,6 +33,7 @@ export default function TeacherPanel() {
   const [docs, setDocs] = useState<ObjectDoc[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   // New-session form
   const [newCode, setNewCode] = useState('');
@@ -72,7 +75,7 @@ export default function TeacherPanel() {
     e.preventDefault();
     setError(null);
     const code = normaliseSessionCode(newCode);
-    if (!isValidSessionCode(code)) return setError('Code: 3–16 of A–Z 0–9 -');
+    if (!isValidSessionCode(code)) return setError(t('teacher.errCode'));
     setBusy(true);
     try {
       await httpsCallable(functions, 'createSession')({
@@ -83,7 +86,7 @@ export default function TeacherPanel() {
       });
       setNewCode('');
       setNewTitle('');
-      setNewMode('free');
+      setSelected(code);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Create failed.');
     } finally {
@@ -92,16 +95,15 @@ export default function TeacherPanel() {
   }
 
   async function toggleActive(code: string, active: boolean) {
-    await httpsCallable(functions, 'setSessionActive')({ code, active, passcode });
+    try {
+      await httpsCallable(functions, 'setSessionActive')({ code, active, passcode });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed.');
+    }
   }
   async function moderate(objectId: string, status: 'approved' | 'rejected') {
     if (!selected) return;
-    await httpsCallable(functions, 'moderateObject')({
-      code: selected,
-      objectId,
-      status,
-      passcode,
-    });
+    await httpsCallable(functions, 'moderateObject')({ code: selected, objectId, status, passcode });
   }
 
   function studentUrl(code: string) {
@@ -110,148 +112,147 @@ export default function TeacherPanel() {
 
   if (!unlocked) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
+      <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-500">
+        <LangToggle className="absolute top-4 right-4" />
         <form
-          className="bg-slate-800 p-6 rounded-2xl border border-slate-700 max-w-sm w-full"
+          className="bg-white text-slate-800 p-8 rounded-[28px] shadow-2xl max-w-sm w-full"
           onSubmit={(e) => {
             e.preventDefault();
             setUnlocked(true);
           }}
         >
-          <h2 className="text-xl font-bold mb-4">👩‍🏫 Teacher Panel</h2>
+          <h2 className="text-2xl font-extrabold mb-4">{t('teacher.title')}</h2>
           <input
             type="password"
             value={passcode}
             onChange={(e) => setPasscode(e.target.value)}
-            placeholder="Teacher passcode"
-            className="w-full px-3 py-2 rounded bg-slate-900 border border-slate-600 mb-3"
+            placeholder={t('teacher.passcode')}
+            className="w-full px-4 py-3 rounded-2xl bg-slate-100 border-2 border-transparent focus:border-indigo-400 focus:bg-white outline-none mb-3"
             autoFocus
           />
-          <button className="w-full bg-blue-600 hover:bg-blue-500 py-2 rounded">Unlock</button>
-          <p className="text-[11px] text-slate-500 mt-2">
-            The passcode is checked server-side on every action.
-          </p>
+          <button className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-bold">
+            {t('teacher.unlock')}
+          </button>
+          <p className="text-[11px] text-slate-400 mt-3">{t('teacher.passNote')}</p>
         </form>
       </div>
     );
   }
 
+  const current = sessions.find((s) => s.id === selected);
+
   return (
-    <div className="min-h-screen flex">
-      <aside className="w-72 bg-slate-900 border-r border-slate-700 flex flex-col">
-        <div className="p-3 border-b border-slate-700">
-          <h2 className="font-bold mb-3">📚 Sessions</h2>
+    <div className="min-h-screen flex bg-slate-100 text-slate-800">
+      <aside className="w-80 bg-white border-r border-slate-200 flex flex-col">
+        <div className="p-4 border-b border-slate-100">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-extrabold text-lg">{t('teacher.sessions')}</h2>
+            <LangToggle className="shadow-none ring-1 ring-slate-200" />
+          </div>
           <form onSubmit={handleCreate} className="space-y-2">
             <input
               type="text"
               value={newCode}
               onChange={(e) => setNewCode(e.target.value.toUpperCase())}
-              placeholder="Code (e.g. KR-MY-2026)"
-              className="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 font-mono text-sm"
+              placeholder={t('teacher.codePh')}
+              className="w-full px-3 py-2 rounded-xl bg-slate-100 font-mono text-sm outline-none focus:ring-2 ring-indigo-300"
             />
             <input
               type="text"
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Title (optional)"
-              className="w-full px-2 py-1.5 rounded bg-slate-800 border border-slate-700 text-sm"
+              placeholder={t('teacher.titlePh')}
+              className="w-full px-3 py-2 rounded-xl bg-slate-100 text-sm outline-none focus:ring-2 ring-indigo-300"
             />
-            <div className="grid grid-cols-2 gap-1">
-              <button
-                type="button"
-                onClick={() => setNewMode('free')}
-                className={`py-1.5 rounded text-xs ${newMode === 'free' ? 'bg-blue-600' : 'bg-slate-800 border border-slate-700'}`}
-              >
-                🗺 Free (4-rooms)
-              </button>
-              <button
-                type="button"
-                onClick={() => setNewMode('match')}
-                className={`py-1.5 rounded text-xs ${newMode === 'match' ? 'bg-blue-600' : 'bg-slate-800 border border-slate-700'}`}
-              >
-                🤝 AI Match (1:1)
-              </button>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(['free', 'match'] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setNewMode(m)}
+                  className={`py-2 rounded-xl text-xs font-bold transition ${
+                    newMode === m ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {m === 'free' ? t('teacher.modeFree') : t('teacher.modeMatch')}
+                </button>
+              ))}
             </div>
             <button
               disabled={busy}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 py-1.5 rounded text-sm"
+              className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-white py-2.5 rounded-xl text-sm font-bold"
             >
-              {busy ? '…' : '+ Create session'}
+              {busy ? '…' : t('teacher.create')}
             </button>
           </form>
-          {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
+          {error && <p className="text-rose-600 text-xs mt-2">{error}</p>}
         </div>
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto p-2 space-y-1">
           {sessions.map((s) => (
             <button
               key={s.id}
               onClick={() => setSelected(s.id)}
-              className={`w-full text-left px-3 py-2 border-b border-slate-800 hover:bg-slate-800 ${
-                selected === s.id ? 'bg-slate-800' : ''
+              className={`w-full text-left px-3 py-2.5 rounded-xl transition ${
+                selected === s.id ? 'bg-indigo-50 ring-2 ring-indigo-200' : 'hover:bg-slate-50'
               }`}
             >
               <div className="flex items-center justify-between">
-                <span className="font-mono text-sm">{s.id}</span>
-                <span className={`text-[10px] ${s.active ? 'text-green-400' : 'text-slate-500'}`}>
-                  {s.active ? '● live' : '○ closed'}
+                <span className="font-mono text-sm font-bold">{s.id}</span>
+                <span className={`text-[10px] font-bold ${s.active ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  {s.active ? t('teacher.live') : t('teacher.closed')}
                 </span>
               </div>
-              <div className="text-xs text-slate-400 truncate flex items-center gap-1">
-                <span>{s.title ?? s.id}</span>
-                <span className="text-[9px] uppercase bg-slate-700 px-1 rounded ml-auto">
-                  {s.mode === 'match' ? 'AI Match' : 'Free'}
+              <div className="text-xs text-slate-500 truncate flex items-center gap-1">
+                <span className="truncate">{s.title ?? s.id}</span>
+                <span className="text-[9px] bg-slate-100 px-1.5 py-0.5 rounded-full ml-auto shrink-0">
+                  {s.mode === 'match' ? t('teacher.modeMatch') : t('teacher.modeFree')}
                 </span>
               </div>
             </button>
           ))}
-          {sessions.length === 0 && (
-            <p className="text-slate-500 text-xs text-center mt-6 px-3">
-              No sessions yet. Create one above.
-            </p>
-          )}
+          {sessions.length === 0 && <p className="text-slate-400 text-xs text-center mt-6 px-3">{t('teacher.none')}</p>}
         </div>
       </aside>
 
       <main className="flex-1 p-6 overflow-auto">
         {!selected ? (
-          <p className="text-slate-500">Pick a session on the left.</p>
+          <p className="text-slate-400">{t('teacher.pick')}</p>
         ) : (
           <>
-            <header className="flex items-center justify-between mb-4 flex-wrap gap-3">
-              <div>
-                <h2 className="text-2xl font-bold">
-                  {sessions.find((s) => s.id === selected)?.title ?? selected}{' '}
-                  <span className="text-slate-500 font-mono text-base">[{selected}]</span>
+            <header className="bg-white rounded-3xl shadow-sm p-5 flex items-center justify-between mb-5 flex-wrap gap-3">
+              <div className="min-w-0">
+                <h2 className="text-2xl font-extrabold">
+                  {current?.title ?? selected} <span className="text-slate-400 font-mono text-base">[{selected}]</span>
                 </h2>
-                <a
-                  href={studentUrl(selected)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-blue-400 text-xs underline break-all"
-                >
+                <a href={studentUrl(selected)} target="_blank" rel="noreferrer" className="text-indigo-600 text-xs underline break-all">
                   {studentUrl(selected)}
                 </a>
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => toggleActive(selected, !sessions.find((s) => s.id === selected)?.active)}
-                  className="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded text-sm"
+                  onClick={() => toggleActive(selected, !current?.active)}
+                  className="bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-xl text-sm font-bold"
                 >
-                  {sessions.find((s) => s.id === selected)?.active ? 'Close session' : 'Open session'}
+                  {current?.active ? t('teacher.closeSession') : t('teacher.openSession')}
                 </button>
                 <button
-                  onClick={() => navigator.clipboard.writeText(studentUrl(selected))}
-                  className="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm"
+                  onClick={() => {
+                    navigator.clipboard.writeText(studentUrl(selected)).then(() => {
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 1500);
+                    });
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-bold"
                 >
-                  Copy student URL
+                  {copied ? t('teacher.copied') : t('teacher.copy')}
                 </button>
               </div>
             </header>
 
-            <h3 className="text-sm uppercase text-slate-400 mb-2">Moderation queue</h3>
+            <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-400 mb-3">{t('teacher.queue')}</h3>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
               {docs.map((d) => (
-                <div key={d.id} className="bg-slate-800 rounded-lg overflow-hidden border border-slate-700">
+                <div key={d.id} className="bg-white rounded-2xl overflow-hidden shadow-sm">
                   {d.type === 'slides' && d.slidesUrl ? (
                     <iframe
                       src={d.slidesUrl}
@@ -263,53 +264,40 @@ export default function TeacherPanel() {
                   ) : d.imageUrl ? (
                     <img src={d.imageUrl} alt="" className="w-full h-40 object-cover bg-black" />
                   ) : (
-                    <div className="h-40 flex items-center justify-center text-slate-500">empty</div>
+                    <div className="h-40 flex items-center justify-center text-slate-400">{t('teacher.empty')}</div>
                   )}
-                  <div className="p-2 text-xs">
+                  <div className="p-3 text-xs space-y-1">
                     <div className="font-mono text-slate-400 truncate">
-                      {d.id} · <span className="text-slate-300">{d.type ?? 'image'}</span>
+                      {d.id} · <span className="text-slate-600">{d.type ?? 'image'}</span>
                     </div>
-                    <div>by {d.ownerName ?? '?'}</div>
+                    <div>{t('board.by', { name: d.ownerName ?? '?' })}</div>
                     <div>
-                      Status:{' '}
+                      {t('teacher.status')}:{' '}
                       <span
-                        className={
-                          d.status === 'approved'
-                            ? 'text-green-400'
-                            : d.status === 'rejected'
-                              ? 'text-red-400'
-                              : 'text-yellow-400'
-                        }
+                        className={`font-bold ${
+                          d.status === 'approved' ? 'text-emerald-600' : d.status === 'rejected' ? 'text-rose-600' : 'text-amber-600'
+                        }`}
                       >
                         {d.status}
                       </span>
                     </div>
                     {d.safeSearch && (
-                      <div className="text-slate-500 mt-1">
-                        adult:{d.safeSearch.adult} · violence:{d.safeSearch.violence} · racy:
-                        {d.safeSearch.racy}
+                      <div className="text-slate-400">
+                        adult:{d.safeSearch.adult} · violence:{d.safeSearch.violence} · racy:{d.safeSearch.racy}
                       </div>
                     )}
-                    <div className="flex gap-1 mt-2">
-                      <button
-                        onClick={() => moderate(d.id, 'approved')}
-                        className="flex-1 bg-green-700 hover:bg-green-600 py-1 rounded"
-                      >
-                        Approve
+                    <div className="flex gap-1.5 pt-1">
+                      <button onClick={() => moderate(d.id, 'approved')} className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-1.5 rounded-lg">
+                        {t('teacher.approve')}
                       </button>
-                      <button
-                        onClick={() => moderate(d.id, 'rejected')}
-                        className="flex-1 bg-red-700 hover:bg-red-600 py-1 rounded"
-                      >
-                        Reject
+                      <button onClick={() => moderate(d.id, 'rejected')} className="flex-1 bg-rose-500 hover:bg-rose-400 text-white font-bold py-1.5 rounded-lg">
+                        {t('teacher.reject')}
                       </button>
                     </div>
                   </div>
                 </div>
               ))}
-              {docs.length === 0 && (
-                <p className="text-slate-500 text-xs">No uploads yet in this session.</p>
-              )}
+              {docs.length === 0 && <p className="text-slate-400 text-xs">{t('teacher.noUploads')}</p>}
             </div>
           </>
         )}
