@@ -8,6 +8,7 @@ interface Props {
   onToggleAuto: () => void;
   onNext: () => void;
   onHelp: () => void;
+  onClose?: () => void;
 }
 
 /**
@@ -15,7 +16,7 @@ interface Props {
  * ask for a new question or for help, and replay any line as speech.
  * Auto-scrolls so the latest prompt is always visible.
  */
-export default function FacilitatorPanel({ messages, busy, auto, onToggleAuto, onNext, onHelp }: Props) {
+export default function FacilitatorPanel({ messages, busy, auto, onToggleAuto, onNext, onHelp, onClose }: Props) {
   const endRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -37,6 +38,7 @@ export default function FacilitatorPanel({ messages, busy, auto, onToggleAuto, o
         <div className="flex items-center gap-2 text-sm font-semibold">
           <span className="text-lg">🦉</span> AI Tutor
         </div>
+        <div className="flex items-center gap-1">
         <button
           type="button"
           onClick={onToggleAuto}
@@ -47,6 +49,12 @@ export default function FacilitatorPanel({ messages, busy, auto, onToggleAuto, o
         >
           {auto ? '● Auto-leading' : '○ Manual'}
         </button>
+        {onClose && (
+          <button type="button" onClick={onClose} className="text-indigo-200 hover:text-white text-sm px-1" title="Hide">
+            ✕
+          </button>
+        )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-2">

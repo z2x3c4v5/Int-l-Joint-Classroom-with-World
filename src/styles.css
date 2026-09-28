@@ -1,1 +1,10 @@
 @import "tailwindcss";
+
+html, body { font-family: Pretendard, "Noto Sans KR", system-ui, sans-serif; }
+
+@keyframes gc-drift {
+  from { transform: translate(-6%, -4%); }
+  to { transform: translate(6%, 4%); }
+}
+.gc-drift { animation: gc-drift 50s ease-in-out infinite alternate; }
+@media (prefers-reduced-motion: reduce) { .gc-drift { animation: none; } }

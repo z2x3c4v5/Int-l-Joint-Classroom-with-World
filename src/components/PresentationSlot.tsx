@@ -63,7 +63,7 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
 
   return (
     <div
-      className="absolute bg-slate-100 border-2 border-slate-700 rounded shadow-lg overflow-hidden"
+      className="absolute rounded-sm overflow-hidden"
       style={{ left: object.x, top: object.y, width: object.w, height: object.h }}
     >
       {isImage ? (
@@ -78,19 +78,19 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
           allowFullScreen
         />
       ) : slidesPending ? (
-        <div className="w-full h-full flex flex-col items-center justify-center text-slate-600 text-xs px-2 text-center">
+        <div className="w-full h-full flex flex-col items-center justify-center text-white/80 text-xs px-2 text-center">
           <span>📊 Slides waiting for teacher approval</span>
         </div>
       ) : object.id === 'obj-welcome' ? (
-        <div className="w-full h-full bg-sky-300 flex flex-col items-center justify-center text-center text-slate-800 px-2 leading-tight">
-          <div className="text-[10px] sm:text-xs font-extrabold">🌐 GLOBAL ENGLISH CLASSROOM</div>
-          <div className="text-[9px] sm:text-[10px] font-semibold opacity-80">
+        <div className="w-full h-full flex flex-col items-center justify-center text-center text-white px-2 leading-tight">
+          <div className="text-xs font-extrabold tracking-wide">🌐 GLOBAL ENGLISH CLASSROOM</div>
+          <div className="text-[10px] font-semibold opacity-80 mt-0.5">
             Korea · Malaysia · Taiwan · Thailand
           </div>
         </div>
       ) : (
-        <div className="w-full h-full flex items-center justify-center text-slate-500 text-xs text-center px-2">
-          {rejected ? '⚠️ Removed by moderation' : `📺 ${object.label}`}
+        <div className="w-full h-full flex items-center justify-center text-white/75 text-sm font-semibold text-center px-2 tracking-wide [font-family:'Comic_Sans_MS','Chalkboard_SE',Pretendard,sans-serif]">
+          {rejected ? '⚠️ Removed by moderation' : object.label.replace(' board', '')}
         </div>
       )}
       {pending && !slidesPending && (
@@ -106,9 +106,9 @@ export default function PresentationSlot({ object, state, reachable, myName, ses
           type="button"
           onClick={() => setPickerOpen(true)}
           disabled={busy}
-          className="absolute bottom-1 right-1 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-500 text-white text-[10px] px-2 py-1 rounded shadow"
+          className="absolute bottom-1 right-1 bg-white/90 hover:bg-white disabled:bg-slate-500 text-slate-800 text-[10px] font-bold px-2 py-1 rounded-full shadow"
         >
-          {state?.imageUrl || state?.slidesUrl ? 'Replace' : 'Add'}
+          {state?.imageUrl || state?.slidesUrl ? '↻ Replace' : '＋ Add'}
         </button>
       )}
       {reachable && pickerOpen && (

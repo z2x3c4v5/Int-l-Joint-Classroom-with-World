@@ -23,6 +23,8 @@ export default function TouchJoystick({ onMove, onRelease }: Props) {
   useEffect(() => {
     function start(e: TouchEvent) {
       if (touchIdRef.current !== null) return;
+      // Never steal taps meant for buttons, inputs or panels.
+      if ((e.target as HTMLElement | null)?.closest?.('button, input, textarea, a, iframe, [data-ui]')) return;
       const t = e.changedTouches[0];
       if (!t) return;
       // Only react to touches that start in the lower-left third of the screen

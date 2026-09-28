@@ -83,6 +83,13 @@ OpenAI(gpt-4o-mini) 조합으로 동시 70명까지 안정. 월 비용 약 5만 
     └── src/index.ts          # 위 7개 Function
 ```
 
+### ZEP 스타일 월드 (src/game/)
+- `map.ts` — 타일맵을 코드로 생성(44×32, 1타일=48px), 충돌, 방 4개(PA id 고정: pa-polite/leading/useful/smart), 칠판 위치, 픽셀아트 사전 렌더
+- `sprites.ts` — 절차적 치비 캐릭터(4방향×걷기 3프레임), look 문자열 "피부-머리-머리색-상의-하의"
+- `GameWorld.tsx` — 캔버스 1장 + rAF 루프(이동/카메라/충돌/클릭 이동/점프/이모지/말하는 사람 표시). 좌표는 **발 중심**
+- `pages/Classroom.tsx` — ZEP식 UI(상단 카메라 줄, 하단 툴바, 우측 AI 튜터), `/preview` 는 Firebase 없이 봇이 돌아다니는 데모
+- 이동 키는 `e.code` 기준(한글 IME에서도 WASD 동작)
+
 ## 4. 데이터 모델 (Firestore)
 
 ```
@@ -113,7 +120,7 @@ sessions/{code}/rooms/{paId}/facilitatorMessages/{msgId}
 
 ### Realtime DB
 ```
-rooms/{code}/players/{uid}: { name, x, y, paId, ts }
+rooms/{code}/players/{uid}: { name, look, x, y, paId, dir, mv, emo, emoTs, ts }  (x,y = 발 중심)
 ```
 
 ### Storage

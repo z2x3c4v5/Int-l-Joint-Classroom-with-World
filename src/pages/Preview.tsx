@@ -1,135 +1,122 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import GameWorld, { type MyState, type WorldPlayer } from '../game/GameWorld';
+import { canStand, findPaAt, PRIVATE_AREAS, ROOM_NPC, SPAWN, TILE } from '../game/map';
+import { lookFromName, randomLook, type Dir } from '../game/sprites';
 
 /**
- * Static demo of the new 1:1 AI-tutor room — no Firebase, no LiveKit.
- * Shows the experience: two paired students on camera, an AI tutor that
- * leads the conversation, and shared material instead of a free-roam map.
- * Reachable at /preview, used for design reviews and screenshots.
+ * Offline demo of the ZEP-style school — no Firebase, no LiveKit.
+ * You walk around for real; a few bot students wander the halls and rooms.
+ * Reachable at /preview for design reviews.
  */
 
-interface DemoMsg {
-  id: string;
-  action: 'start' | 'next' | 'help';
-  text: string;
+const BOT_NAMES = ['Hiroshi', '민수', 'Mary', 'Somchai', 'Mei', '지우'];
+const WAYPOINTS: Array<[number, number]> = [
+  [22, 16], [10, 16], [34, 16], [22, 7], [22, 25], [21.5, 30], [15.5, 12], [27.5, 12], [8, 10], [33, 9], [9, 24], [32, 24], [17, 30], [28, 30],
+];
+const EMOS = ['👋', '😀', '👍', '🎉', '❓'];
+
+interface Bot extends WorldPlayer {
+  tx: number;
+  ty: number;
+  wait: number;
 }
 
-const SCRIPT: DemoMsg[] = [
-  { id: 'm1', action: 'start', text: "Hi Hiroshi and 민수! I'm your tutor. Let's talk about food. What did you eat for breakfast today?" },
-  { id: 'm2', action: 'next', text: 'Nice! Hiroshi, is rice popular in Japan too? 민수, do you like rice or bread more?' },
-  { id: 'm3', action: 'help', text: 'You can say: "I had eggs and toast." Now you both try it together!' },
-];
+function pickTarget(): [number, number] {
+  const [x, y] = WAYPOINTS[Math.floor(Math.random() * WAYPOINTS.length)];
+  return [x * TILE, y * TILE];
+}
 
 export default function Preview() {
-  // Reveal the scripted tutor messages one by one so the demo feels alive.
-  const [shown, setShown] = useState(1);
-  useEffect(() => {
-    if (shown >= SCRIPT.length) return;
-    const id = setTimeout(() => setShown((n) => n + 1), 2600);
-    return () => clearTimeout(id);
-  }, [shown]);
+  const myLook = useMemo(() => randomLook(), []);
+  const botsRef = useRef<Bot[]>(
+    BOT_NAMES.map((name, i) => {
+      const [x, y] = WAYPOINTS[i + 1];
+      const [tx, ty] = pickTarget();
+      return {
+        id: `bot-${i}`, name, x: x * TILE, y: y * TILE, dir: 'down', moving: false,
+        look: lookFromName(name + i), paId: null, tx, ty, wait: Math.random() * 2,
+      };
+    }),
+  );
+  const [others, setOthers] = useState<Record<string, WorldPlayer>>({});
+  const [me, setMe] = useState<MyState>({ ...SPAWN, dir: 'down', moving: false, paId: null });
 
-  const endRef = useRef<HTMLDivElement>(null);
+  // Simple bot brain: walk to a waypoint, pause, maybe emote, pick another.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [shown]);
+    let last = performance.now();
+    const id = setInterval(() => {
+      const now = performance.now();
+      const dt = Math.min(0.2, (now - last) / 1000);
+      last = now;
+      for (const b of botsRef.current) {
+        if (b.wait > 0) {
+          b.wait -= dt;
+          b.moving = false;
+          if (b.wait <= 0) [b.tx, b.ty] = pickTarget();
+          continue;
+        }
+        const dx = b.tx - b.x;
+        const dy = b.ty - b.y;
+        const d = Math.hypot(dx, dy);
+        if (d < 8) {
+          b.wait = 1.5 + Math.random() * 3;
+          if (Math.random() < 0.4) { b.emo = EMOS[Math.floor(Math.random() * EMOS.length)]; b.emoTs = Date.now(); }
+          continue;
+        }
+        const step = (150 * dt) / d;
+        const nx = b.x + dx * step;
+        const ny = b.y + dy * step;
+        let moved = false;
+        if (canStand(nx, b.y)) { b.x = nx; moved = true; }
+        if (canStand(b.x, ny)) { b.y = ny; moved = true; }
+        if (!moved) { [b.tx, b.ty] = pickTarget(); }
+        b.moving = moved;
+        b.dir = (Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 'left' : 'right') : dy < 0 ? 'up' : 'down') as Dir;
+        b.paId = findPaAt(b.x, b.y)?.id ?? null;
+      }
+      setOthers(Object.fromEntries(botsRef.current.map((b) => [b.id, { ...b }])));
+    }, 80);
+    return () => clearInterval(id);
+  }, []);
+
+  const pa = PRIVATE_AREAS.find((p) => p.id === me.paId) ?? null;
+  const npcs = useMemo(() => Object.values(ROOM_NPC), []);
 
   return (
-    <div className="h-screen flex flex-col bg-slate-950 text-white overflow-hidden">
-      <header className="bg-slate-900/90 px-4 py-2.5 flex items-center justify-between border-b border-slate-800">
-        <div className="text-sm flex items-center gap-2">
-          <span className="font-semibold">🤝 1:1 English Room</span>
-          <span className="text-slate-500 font-mono text-xs hidden sm:inline">Demo · KR-MY-2026</span>
-          <span className="ml-1 text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full">
-            PREVIEW
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <span className="bg-amber-600/70 text-xs px-3 py-1.5 rounded-lg">🔄 New partner</span>
-          <span className="bg-rose-700/70 text-xs px-3 py-1.5 rounded-lg">Leave</span>
-        </div>
-      </header>
-
-      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        <main className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 min-h-0">
-          <VideoCard name="민수 (you)" sub="🇰🇷 Korea" from="from-sky-500 to-indigo-600" you />
-          <VideoCard name="Hiroshi" sub="🌐 Overseas" from="from-emerald-500 to-teal-600" />
-        </main>
-
-        <aside className="w-full lg:w-96 border-t lg:border-t-0 lg:border-l border-slate-800 flex flex-col p-3 gap-3 min-h-0">
-          <div className="flex gap-2">
-            <span className="flex-1 bg-slate-800 py-2 rounded-lg text-xs text-center">🎤 Mute</span>
-            <span className="flex-1 bg-slate-800 py-2 rounded-lg text-xs text-center">📷 Camera off</span>
-          </div>
-          <span className="bg-slate-800 py-2 rounded-lg text-xs text-center">🖥 Share my screen</span>
-
-          <div className="flex-1 min-h-0">
-            <div className="flex flex-col h-full bg-indigo-50 text-slate-900 rounded-xl shadow-inner overflow-hidden">
-              <div className="px-3 py-2.5 bg-indigo-600 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <span className="text-lg">🦉</span> AI Tutor
-                </div>
-                <span className="text-[11px] px-2 py-1 rounded-full font-medium bg-emerald-400 text-emerald-950">
-                  ● Auto-leading
-                </span>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {SCRIPT.slice(0, shown).map((m) => (
-                  <div
-                    key={m.id}
-                    className="bg-white border border-indigo-100 rounded-xl p-2.5 shadow-sm text-sm leading-snug"
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] text-indigo-600 uppercase tracking-wide font-semibold">
-                        {m.action === 'help' ? '🆘 Help' : m.action === 'start' ? '👋 Welcome' : '💬 Question'}
-                      </span>
-                      <span className="text-xs text-indigo-600">🔊</span>
-                    </div>
-                    {m.text}
-                  </div>
-                ))}
-                {shown < SCRIPT.length && (
-                  <p className="text-indigo-500 text-xs animate-pulse">Tutor is thinking…</p>
-                )}
-                <div ref={endRef} />
-              </div>
-              <div className="p-2 bg-indigo-100 border-t border-indigo-200 flex gap-2">
-                <span className="flex-1 bg-emerald-600 text-white text-sm py-2 rounded-lg text-center">
-                  💬 New question
-                </span>
-                <span className="flex-1 bg-indigo-600 text-white text-sm py-2 rounded-lg text-center">
-                  🆘 Help me
-                </span>
+    <div className="fixed inset-0 bg-[#1b1830] text-white overflow-hidden">
+      <GameWorld
+        myName="You"
+        myLook={myLook}
+        spawn={SPAWN}
+        others={others}
+        hearRadius={300}
+        npcs={npcs}
+        onState={setMe}
+        worldLayer={
+          pa && (
+            <div
+              className="absolute"
+              style={{ left: ROOM_NPC[pa.id].x, top: ROOM_NPC[pa.id].y - 58, transform: 'translate(-50%, -100%)' }}
+            >
+              <div className="max-w-[280px] w-max bg-white text-slate-800 text-[13px] leading-snug font-medium rounded-2xl px-3 py-2 shadow-xl ring-2 ring-amber-300">
+                Hi! Welcome to the {pa.name}. When a friend joins you here, I'll ask you both fun questions!
               </div>
             </div>
-          </div>
-        </aside>
+          )
+        }
+      />
+      <div className="absolute top-3 left-3 flex gap-2">
+        <div className="bg-white/95 text-slate-800 rounded-2xl shadow-lg px-3 py-2 text-sm font-bold">🏫 Preview · Global Classroom</div>
+        <div
+          className="rounded-2xl shadow-lg px-3 py-2 text-sm font-semibold"
+          style={{ background: pa ? pa.color : 'rgba(255,255,255,0.95)', color: pa ? '#fff' : '#334155' }}
+        >
+          {pa ? `🔒 ${pa.name}` : '🚶 Hallway'}
+        </div>
       </div>
-    </div>
-  );
-}
-
-function VideoCard({
-  name,
-  sub,
-  from,
-  you,
-}: {
-  name: string;
-  sub: string;
-  from: string;
-  you?: boolean;
-}) {
-  const initial = name.trim().charAt(0).toUpperCase();
-  return (
-    <div className="relative rounded-xl overflow-hidden border border-slate-800 bg-slate-900 flex items-center justify-center">
-      <div className={`absolute inset-0 bg-gradient-to-br ${from} opacity-90`} />
-      <div className="relative w-24 h-24 rounded-full bg-white/20 backdrop-blur flex items-center justify-center text-4xl font-bold">
-        {initial}
-      </div>
-      <div className="absolute bottom-2 left-2 flex items-center gap-2 bg-black/40 backdrop-blur px-2.5 py-1 rounded-lg text-xs">
-        <span className="font-semibold">{name}</span>
-        <span className="text-white/70">{sub}</span>
-        {you && <span className="text-emerald-300">🎤</span>}
+      <div className="absolute top-3 right-3 bg-slate-900/80 rounded-2xl px-3 py-2 text-[11px] text-slate-300 leading-5 hidden md:block">
+        <div>WASD / ↑↓←→ move · Click to walk · Space jump</div>
+        <div>Demo only — no camera, no login.</div>
       </div>
     </div>
   );

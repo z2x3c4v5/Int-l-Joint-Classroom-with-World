@@ -60,6 +60,8 @@ export function useLiveKitForPA(
   // Per-person volume (0–1) for hallway distance fading.
   const volumesRef = useRef<Record<string, number>>({});
   const [canPlayAudio, setCanPlayAudio] = useState(true);
+  // Identities currently talking (includes the local participant).
+  const [speakers, setSpeakers] = useState<Set<string>>(new Set());
 
   function applySubscriptions(p: RemoteParticipant) {
     if (!proximityRef.current) return;
@@ -80,6 +82,7 @@ export function useLiveKitForPA(
         setRemotes({});
         setScreenShare(null);
         setScreenOn(false);
+        setSpeakers(new Set());
       }
     }
 
@@ -108,6 +111,13 @@ export function useLiveKitForPA(
           webAudioMix: true,
         });
         r.on(RoomEvent.AudioPlaybackStatusChanged, () => setCanPlayAudio(r.canPlaybackAudio));
+        r.on(RoomEvent.ActiveSpeakersChanged, (list) => {
+          setSpeakers((prev) => {
+            const next = new Set(list.map((p) => p.identity));
+            if (next.size === prev.size && [...next].every((id) => prev.has(id))) return prev;
+            return next;
+          });
+        });
 
         r.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
           attachTrack(track, pub, participant);
@@ -346,5 +356,6 @@ export function useLiveKitForPA(
     setVolumes,
     canPlayAudio,
     startAudio,
+    speakers,
   };
 }
